@@ -1,14 +1,15 @@
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function BookingScreen() {
+export default function OrdersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.content}>
-        <Text style={styles.title}>Booking Screen</Text>
-        <Text style={styles.subtitle}>Welcome to Clive Green</Text>
+        <Text style={styles.title}>Orders</Text>
+        <Text style={styles.subtitle}>Your booking history</Text>
       </View>
     </SafeAreaView>
   );

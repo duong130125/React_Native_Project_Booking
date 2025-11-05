@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,30 +16,189 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { login, register } from "../apis/auth";
+import { LoginRequest, RegisterRequest } from "../types/auth";
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [gender, setGender] = useState<"Male" | "Female">("Male");
+  const [fullName, setFullName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [birthday, setBirthday] = useState("");
+  const [genderName, setGenderName] = useState<"MALE" | "FEMALE" | "OTHER">(
+    "MALE"
+  );
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleAuth = () => {
-    // Handle authentication logic here
-    console.log(isLogin ? "Login" : "Register", {
-      email,
-      password,
-      name,
-      mobileNumber,
-      dateOfBirth,
-      gender,
-    });
-    // Navigate to main app after successful auth
-    router.replace("/(tabs)/booking");
+  const handleAuth = async () => {
+    // Validate inputs
+    if (!email || !password) {
+      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ email và mật khẩu");
+      return;
+    }
+
+    if (!isLogin && !fullName) {
+      Alert.alert("Lỗi", "Vui lòng nhập tên của bạn");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      if (isLogin) {
+        // Xử lý đăng nhập
+        const loginRequest: LoginRequest = {
+          email: email.trim(),
+          password: password,
+        };
+
+        const loginResponse = await login(loginRequest);
+
+        // Kiểm tra success và token
+        if (loginResponse.success && loginResponse.token) {
+          // Lưu token vào AsyncStorage
+          await AsyncStorage.setItem("accessToken", loginResponse.token);
+
+          // Lưu thông tin user
+          const userData = {
+            id: loginResponse.userId,
+            email: loginResponse.email,
+            fullName: loginResponse.fullName,
+            gender: loginResponse.gender,
+            phoneNumber: loginResponse.phoneNumber,
+            birthday: loginResponse.birthday,
+          };
+          await AsyncStorage.setItem("user", JSON.stringify(userData));
+
+          Alert.alert(
+            "Thành công",
+            loginResponse.message || "Đăng nhập thành công!",
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  router.replace("/(tabs)/homepage");
+                },
+              },
+            ]
+          );
+        } else {
+          Alert.alert(
+            "Lỗi",
+            loginResponse.message || "Đăng nhập thất bại. Vui lòng thử lại."
+          );
+        }
+      } else {
+        // Xử lý đăng ký
+        const registerRequest: RegisterRequest = {
+          fullName: fullName.trim(),
+          email: email.trim(),
+          password: password,
+          phoneNumber: phoneNumber.trim() || undefined,
+          birthday: birthday.trim() || undefined,
+          genderName: genderName || undefined,
+        };
+
+        const userResponse = await register(registerRequest);
+
+        Alert.alert(
+          "Thành công",
+          "Đăng ký thành công! Vui lòng đăng nhập để tiếp tục.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                setIsLogin(true);
+                // Reset form
+                setFullName("");
+                setPhoneNumber("");
+                setBirthday("");
+                setEmail("");
+                setPassword("");
+              },
+            },
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error("Auth error:", error);
+
+      // Xử lý Network Error đặc biệt
+      if (error.isNetworkError || !error.response) {
+        const platform = error.platform || "unknown";
+        const baseURL = error.baseURL || "unknown";
+
+        let errorMessage = "Không thể kết nối đến server.\n\n";
+
+        if (platform === "android") {
+          errorMessage += "Đang chạy trên Android:\n";
+          errorMessage +=
+            "• Emulator: Đảm bảo backend đang chạy tại http://localhost:8080\n";
+          errorMessage += "  App sẽ dùng: http://10.0.2.2:8080\n";
+          errorMessage +=
+            "• Thiết bị thật: Dùng IP máy tính (ví dụ: http://192.168.1.100:8080)\n";
+        } else if (platform === "ios") {
+          errorMessage += "Đang chạy trên iOS:\n";
+          errorMessage +=
+            "• Simulator: Đảm bảo backend đang chạy tại http://localhost:8080\n";
+          errorMessage +=
+            "• Thiết bị thật: Dùng IP máy tính (ví dụ: http://192.168.1.100:8080)\n";
+        }
+
+        errorMessage += `\nURL hiện tại: ${baseURL}\n\n`;
+        errorMessage += "Cách sửa:\n";
+        errorMessage +=
+          "1. Kiểm tra backend đang chạy (mở http://localhost:8080/api/v1/auth/check-email/test@test.com)\n";
+        errorMessage += "2. Nếu là thiết bị thật, tìm IP máy tính:\n";
+        errorMessage += "   - Windows: ipconfig (tìm IPv4 Address)\n";
+        errorMessage += "   - Mac/Linux: ifconfig (tìm IP của WiFi adapter)\n";
+        errorMessage += "3. Tạo file .env trong thư mục gốc với:\n";
+        errorMessage += "   EXPO_PUBLIC_API_URL=http://YOUR_IP:8080/api/v1/\n";
+        errorMessage += "4. Restart app với: npx expo start --clear";
+
+        Alert.alert("Lỗi kết nối", errorMessage);
+        setIsLoading(false);
+        return;
+      }
+
+      // Xử lý error từ APIResponse format
+      let errorMessage = "Đã xảy ra lỗi. Vui lòng thử lại.";
+
+      if (error.response?.data) {
+        const apiResponse = error.response.data;
+
+        // Nếu có message từ APIResponse
+        if (apiResponse.message) {
+          errorMessage = apiResponse.message;
+        }
+
+        // Nếu có errors object (validation errors)
+        if (apiResponse.errors && typeof apiResponse.errors === "object") {
+          const errorKeys = Object.keys(apiResponse.errors);
+          if (errorKeys.length > 0) {
+            const firstError = apiResponse.errors[errorKeys[0]];
+            if (typeof firstError === "string") {
+              errorMessage = firstError;
+            } else if (Array.isArray(firstError) && firstError.length > 0) {
+              errorMessage = firstError[0];
+            }
+          }
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = isLogin
+          ? "Đăng nhập thất bại. Vui lòng thử lại."
+          : "Đăng ký thất bại. Vui lòng thử lại.";
+      }
+
+      Alert.alert("Lỗi", errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSocialLogin = (provider: "google" | "facebook") => {
@@ -111,8 +273,8 @@ export default function AuthScreen() {
                   style={styles.input}
                   placeholder="Curtis Weaver"
                   placeholderTextColor="#9CA3AF"
-                  value={name}
-                  onChangeText={setName}
+                  value={fullName}
+                  onChangeText={setFullName}
                   autoCapitalize="words"
                 />
               </View>
@@ -141,8 +303,8 @@ export default function AuthScreen() {
                   style={styles.input}
                   placeholder="(209) 555-0104"
                   placeholderTextColor="#9CA3AF"
-                  value={mobileNumber}
-                  onChangeText={setMobileNumber}
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -157,8 +319,8 @@ export default function AuthScreen() {
                     style={[styles.input, styles.inputWithIconText]}
                     placeholder="August 14, 2023"
                     placeholderTextColor="#9CA3AF"
-                    value={dateOfBirth}
-                    onChangeText={setDateOfBirth}
+                    value={birthday}
+                    onChangeText={setBirthday}
                   />
                   <Ionicons
                     name="calendar-outline"
@@ -204,25 +366,25 @@ export default function AuthScreen() {
                   <TouchableOpacity
                     style={[
                       styles.genderOption,
-                      gender === "Male" && styles.genderOptionActive,
+                      genderName === "MALE" && styles.genderOptionActive,
                     ]}
-                    onPress={() => setGender("Male")}
+                    onPress={() => setGenderName("MALE")}
                     activeOpacity={0.7}
                   >
                     <View
                       style={[
                         styles.radioButton,
-                        gender === "Male" && styles.radioButtonActive,
+                        genderName === "MALE" && styles.radioButtonActive,
                       ]}
                     >
-                      {gender === "Male" && (
+                      {genderName === "MALE" && (
                         <View style={styles.radioButtonInner} />
                       )}
                     </View>
                     <Text
                       style={[
                         styles.genderText,
-                        gender === "Male" && styles.genderTextActive,
+                        genderName === "MALE" && styles.genderTextActive,
                       ]}
                     >
                       Male
@@ -231,25 +393,25 @@ export default function AuthScreen() {
                   <TouchableOpacity
                     style={[
                       styles.genderOption,
-                      gender === "Female" && styles.genderOptionActive,
+                      genderName === "FEMALE" && styles.genderOptionActive,
                     ]}
-                    onPress={() => setGender("Female")}
+                    onPress={() => setGenderName("FEMALE")}
                     activeOpacity={0.7}
                   >
                     <View
                       style={[
                         styles.radioButton,
-                        gender === "Female" && styles.radioButtonActive,
+                        genderName === "FEMALE" && styles.radioButtonActive,
                       ]}
                     >
-                      {gender === "Female" && (
+                      {genderName === "FEMALE" && (
                         <View style={styles.radioButtonInner} />
                       )}
                     </View>
                     <Text
                       style={[
                         styles.genderText,
-                        gender === "Female" && styles.genderTextActive,
+                        genderName === "FEMALE" && styles.genderTextActive,
                       ]}
                     >
                       Female
@@ -271,13 +433,21 @@ export default function AuthScreen() {
 
             {/* Auth Button */}
             <TouchableOpacity
-              style={styles.authButton}
+              style={[
+                styles.authButton,
+                isLoading && styles.authButtonDisabled,
+              ]}
               onPress={handleAuth}
               activeOpacity={0.8}
+              disabled={isLoading}
             >
-              <Text style={styles.authButtonText}>
-                {isLogin ? "Login" : "Register"}
-              </Text>
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.authButtonText}>
+                  {isLogin ? "Login" : "Register"}
+                </Text>
+              )}
             </TouchableOpacity>
 
             {/* Switch Auth Mode */}
@@ -498,6 +668,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
+  },
+  authButtonDisabled: {
+    opacity: 0.6,
   },
   authButtonText: {
     fontSize: 16,

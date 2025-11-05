@@ -24,7 +24,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onComplete();
-    }, 5000);
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, []);
@@ -42,7 +42,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
           </>
         ) : (
           <ExpoImage
-            source={require("../../assets/images/image-booking.png")}
+            source={require("../assets/images/image-booking.png")}
             style={styles.splashImage}
             contentFit="cover"
             transition={200}
