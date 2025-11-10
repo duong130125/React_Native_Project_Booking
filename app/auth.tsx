@@ -128,36 +128,10 @@ export default function AuthScreen() {
 
       // Xử lý Network Error đặc biệt
       if (error.isNetworkError || !error.response) {
-        const platform = error.platform || "unknown";
-        const baseURL = error.baseURL || "unknown";
-
-        let errorMessage = "Không thể kết nối đến server.\n\n";
-
-        if (platform === "android") {
-          errorMessage += "Đang chạy trên Android:\n";
-          errorMessage +=
-            "• Emulator: Đảm bảo backend đang chạy tại http://localhost:8080\n";
-          errorMessage += "  App sẽ dùng: http://10.0.2.2:8080\n";
-          errorMessage +=
-            "• Thiết bị thật: Dùng IP máy tính (ví dụ: http://192.168.1.100:8080)\n";
-        } else if (platform === "ios") {
-          errorMessage += "Đang chạy trên iOS:\n";
-          errorMessage +=
-            "• Simulator: Đảm bảo backend đang chạy tại http://localhost:8080\n";
-          errorMessage +=
-            "• Thiết bị thật: Dùng IP máy tính (ví dụ: http://192.168.1.100:8080)\n";
-        }
-
-        errorMessage += `\nURL hiện tại: ${baseURL}\n\n`;
-        errorMessage += "Cách sửa:\n";
-        errorMessage +=
-          "1. Kiểm tra backend đang chạy (mở http://localhost:8080/api/v1/auth/check-email/test@test.com)\n";
-        errorMessage += "2. Nếu là thiết bị thật, tìm IP máy tính:\n";
-        errorMessage += "   - Windows: ipconfig (tìm IPv4 Address)\n";
-        errorMessage += "   - Mac/Linux: ifconfig (tìm IP của WiFi adapter)\n";
-        errorMessage += "3. Tạo file .env trong thư mục gốc với:\n";
-        errorMessage += "   EXPO_PUBLIC_API_URL=http://YOUR_IP:8080/api/v1/\n";
-        errorMessage += "4. Restart app với: npx expo start --clear";
+        // Sử dụng error message từ axios interceptor (đã có hướng dẫn chi tiết)
+        const errorMessage =
+          error.message ||
+          "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và thử lại.";
 
         Alert.alert("Lỗi kết nối", errorMessage);
         setIsLoading(false);

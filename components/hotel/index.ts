@@ -1,0 +1,2 @@
+export { HotelCard } from "./HotelCard";
+

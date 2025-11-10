@@ -1,18 +1,19 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import React from "react";
-import { Platform, View } from "react-native";
+import { Platform, Text } from "react-native";
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#4F46E5",
-        tabBarInactiveTintColor: "#111827",
+        tabBarActiveTintColor: "#8B5CF6",
+        tabBarInactiveTintColor: "#6B7280",
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
-          borderTopWidth: 0,
+          borderTopWidth: 1,
+          borderTopColor: "#E5E7EB",
           height: Platform.OS === "ios" ? 88 : 64,
           paddingBottom: Platform.OS === "ios" ? 24 : 8,
           paddingTop: 8,
@@ -24,60 +25,88 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: "500",
+          fontWeight: "600",
+          marginTop: 4,
         },
         tabBarIconStyle: {
           marginTop: 4,
         },
+        tabBarShowLabel: true,
       }}
     >
       <Tabs.Screen
         name="homepage"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home-outline" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={24}
+              color={color}
+            />
           ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={{ color }}>Home</Text> : null,
         }}
       />
       <Tabs.Screen
         name="bookmarks"
         options={{
-          title: "Bookmarks",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="bookmark-outline" size={24} color={color} />
+          title: "Notifications",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "notifications" : "notifications-outline"}
+              size={24}
+              color={color}
+            />
           ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={{ color }}>Notifications</Text> : null,
         }}
       />
       <Tabs.Screen
         name="orders"
         options={{
           title: "Orders",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="clipboard-outline" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "clipboard" : "clipboard-outline"}
+              size={24}
+              color={color}
+            />
           ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={{ color }}>Orders</Text> : null,
         }}
       />
       <Tabs.Screen
         name="discounts"
         options={{
           title: "Discounts",
-          tabBarIcon: ({ color }) => (
+          tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
-              name="percent-outline"
-              size={24}
+              name={focused ? "percent" : "percent-outline"}
+              size={26}
               color={color}
             />
           ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={{ color }}>Discounts</Text> : null,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person-outline" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={24}
+              color={color}
+            />
           ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={{ color }}>Profile</Text> : null,
         }}
       />
     </Tabs>
