@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -11,97 +13,139 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-interface Booking {
-  id: string;
-  bookingId: string;
-  bookingDate: string;
-  checkIn: string;
-  checkOut: string;
-  hotelName: string;
-  location: string;
-  rating: number;
-  reviews: number;
-  image: any;
-  isUpcoming: boolean;
-}
+import { getUpcomingBookings, getAllUserBookings, cancelBooking } from "../../apis/booking";
+import { BookingResponse } from "../../types/hotel";
+import { Booking } from "../../types/hotel";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Colors } from "../../constants/colors";
+import { Typography } from "../../constants/typography";
+import { Spacing } from "../../constants/spacing";
 
 export default function OrdersScreen() {
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<"upcoming" | "past">(
     "upcoming"
   );
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [pastBookings, setPastBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const upcomingBookings: Booking[] = [
-    {
-      id: "1",
-      bookingId: "22378965",
-      bookingDate: "April 26, 2023",
-      checkIn: "10:00 PM",
-      checkOut: "03:00 PM",
-      hotelName: "Malon Greens",
-      location: "Mumbai, Maharashtra",
-      rating: 4.0,
-      reviews: 115,
-      image: require("../../assets/images/anh1.jpg"),
-      isUpcoming: true,
-    },
-    {
-      id: "2",
-      bookingId: "90867891",
-      bookingDate: "April 30, 2025",
-      checkIn: "10:00 PM",
-      checkOut: "05:00 PM",
-      hotelName: "Sabro Prime",
-      location: "Mumbai, Maharashtra",
-      rating: 4.0,
-      reviews: 115,
-      image: require("../../assets/images/anh2.jpg"),
-      isUpcoming: true,
-    },
-  ];
+  useEffect(() => {
+    loadBookings();
+  }, []);
 
-  const pastBookings: Booking[] = [
-    {
-      id: "1",
-      bookingId: "22378965",
-      bookingDate: "April 26, 2023",
-      checkIn: "10:00 PM",
-      checkOut: "03:00 PM",
-      hotelName: "Malon Greens",
-      location: "Mumbai, Maharashtra",
-      rating: 4.0,
-      reviews: 115,
-      image: require("../../assets/images/anh5.jpg"),
-      isUpcoming: false,
-    },
-    {
-      id: "2",
-      bookingId: "90867891",
-      bookingDate: "April 30, 2023",
-      checkIn: "10:00 PM",
-      checkOut: "05:00 PM",
-      hotelName: "Peradise Mint",
-      location: "Mumbai, Maharashtra",
-      rating: 4.0,
-      reviews: 115,
-      image: require("../../assets/images/anh4.jpg"),
-      isUpcoming: false,
-    },
-    {
-      id: "3",
-      bookingId: "78001209",
-      bookingDate: "April 30, 2023",
-      checkIn: "10:00 PM",
-      checkOut: "03:00 PM",
-      hotelName: "Fortune Landmark",
-      location: "Goa, Maharashtra",
-      rating: 5.0,
-      reviews: 115,
-      image: require("../../assets/images/anh6.jpg"),
-      isUpcoming: false,
-    },
-  ];
+  useEffect(() => {
+    loadBookings();
+  }, [selectedTab]);
+
+  const convertBookingResponseToBooking = (
+    bookingResponse: BookingResponse
+  ): Booking => {
+    const hotel = bookingResponse.room?.hotel;
+    const checkInDate = new Date(bookingResponse.checkInDate);
+    const checkOutDate = new Date(bookingResponse.checkOutDate);
+    const bookingDate = bookingResponse.createdAt
+      ? new Date(bookingResponse.createdAt)
+      : new Date();
+
+    const isUpcoming =
+      bookingResponse.status === "PENDING" ||
+      bookingResponse.status === "CONFIRMED" ||
+      bookingResponse.status === "CHECKED_IN";
+
+    return {
+      id: bookingResponse.id.toString(),
+      bookingId: bookingResponse.bookingCode,
+      bookingDate: bookingDate.toLocaleDateString("vi-VN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+      checkIn: checkInDate.toLocaleDateString("vi-VN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+      checkOut: checkOutDate.toLocaleDateString("vi-VN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+      hotelName: hotel?.name || "Unknown Hotel",
+      location: hotel?.city
+        ? `${hotel.city}, ${hotel.country || ""}`
+        : hotel?.address || "",
+      rating: hotel?.averageRating || 0,
+      reviews: hotel?.reviewCount || 0,
+      image: require("../../assets/images/anh1.jpg"), // Default image
+      isUpcoming,
+    };
+  };
+
+  const loadBookings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) {
+        setError("Vui lòng đăng nhập để xem bookings");
+        setLoading(false);
+        return;
+      }
+
+      if (selectedTab === "upcoming") {
+        const upcomingData = await getUpcomingBookings();
+        const converted = upcomingData.map(convertBookingResponseToBooking);
+        setUpcomingBookings(converted);
+      } else {
+        const allBookings = await getAllUserBookings(Number(userId));
+        const past = allBookings
+          .filter(
+            (b) =>
+              b.status === "CHECKED_OUT" ||
+              b.status === "CANCELLED" ||
+              b.status === "NO_SHOW"
+          )
+          .map(convertBookingResponseToBooking);
+        setPastBookings(past);
+      }
+    } catch (err: any) {
+      console.error("Error loading bookings:", err);
+      setError(err.message || "Không thể tải danh sách bookings");
+      Alert.alert("Lỗi", err.message || "Không thể tải danh sách bookings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      Alert.alert(
+        "Xác nhận",
+        "Bạn có chắc chắn muốn hủy booking này?",
+        [
+          { text: "Hủy", style: "cancel" },
+          {
+            text: "Xác nhận",
+            onPress: async () => {
+              try {
+                await cancelBooking(Number(bookingId));
+                Alert.alert("Thành công", "Booking đã được hủy");
+                loadBookings();
+              } catch (err: any) {
+                Alert.alert("Lỗi", err.message || "Không thể hủy booking");
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert("Lỗi", err.message || "Không thể hủy booking");
+    }
+  };
+
 
   const renderStars = (rating: number) => {
     const stars = [];
@@ -150,7 +194,11 @@ export default function OrdersScreen() {
       <View style={styles.bookingActions}>
         {booking.isUpcoming ? (
           <>
-            <TouchableOpacity style={styles.cancelButton} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              activeOpacity={0.8}
+              onPress={() => handleCancelBooking(booking.id)}
+            >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -248,20 +296,39 @@ export default function OrdersScreen() {
       </View>
 
       {/* Bookings List */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {bookings.length > 0 ? (
-          bookings.map((booking) => renderBookingCard(booking))
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyStateText}>No {selectedTab} bookings</Text>
-          </View>
-        )}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Đang tải...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={loadBookings}
+          >
+            <Text style={styles.retryButtonText}>Thử lại</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {bookings.length > 0 ? (
+            bookings.map((booking) => renderBookingCard(booking))
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyStateText}>
+                Không có {selectedTab === "upcoming" ? "booking sắp tới" : "booking đã qua"}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -426,5 +493,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6B7280",
     marginTop: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+    paddingHorizontal: Spacing.xl,
+  },
+  errorText: {
+    fontSize: Typography.md,
+    color: Colors.error,
+    textAlign: "center",
+    marginBottom: Spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: Colors.background,
+    fontSize: Typography.md,
+    fontWeight: Typography.semiBold,
   },
 });

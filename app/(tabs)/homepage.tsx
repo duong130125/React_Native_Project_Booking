@@ -1,7 +1,9 @@
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,107 +11,92 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  getAllHotels,
+  getBestHotels,
+  getFeaturedHotels,
+} from "../../apis/hotel";
 import { CityCard, Header, HotelCard } from "../../components";
 import { Colors } from "../../constants/colors";
 import { Spacing } from "../../constants/spacing";
 import { Typography } from "../../constants/typography";
 import { useFavorites } from "../../hooks/useFavorites";
 import { City, Hotel } from "../../types/hotel";
+import { getCitiesFromHotels } from "../../utils/cityUtils";
+import { convertHotelResponsesToHotels } from "../../utils/hotelUtils";
 
 export default function HomepageScreen() {
   const router = useRouter();
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const [bestHotels, setBestHotels] = useState<Hotel[]>([]);
+  const [nearbyHotels, setNearbyHotels] = useState<Hotel[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data for cities
-  const cities: City[] = [
-    {
-      id: 1,
-      name: "Mumbai",
-      image: require("../../assets/images/anh3.jpg"),
-    },
-    {
-      id: 2,
-      name: "Goa",
-      image: require("../../assets/images/anh1.jpg"),
-    },
-    {
-      id: 3,
-      name: "Chennai",
-      image: require("../../assets/images/anh3.jpg"),
-    },
-    {
-      id: 4,
-      name: "Jaipur",
-      image: require("../../assets/images/anh2.jpg"),
-    },
-    {
-      id: 5,
-      name: "Pune",
-      image: require("../../assets/images/anh3.jpg"),
-    },
-  ];
+  useEffect(() => {
+    loadHotels();
+  }, []);
 
-  // Mock data for best hotels
-  const bestHotels: Hotel[] = [
-    {
-      id: 1,
-      name: "Malon Greens",
-      location: "Mumbai, Maharashtra",
-      price: 120,
-      rating: 5.0,
-      reviews: 120,
-      image: require("../../assets/images/anh1.jpg"),
-    },
-    {
-      id: 2,
-      name: "Fortune Lane",
-      location: "Goa, Maharashtra",
-      price: 150,
-      rating: 5.0,
-      reviews: 95,
-      image: require("../../assets/images/anh2.jpg"),
-    },
-    {
-      id: 3,
-      name: "Grand Plaza",
-      location: "Chennai, Tamil Nadu",
-      price: 180,
-      rating: 4.5,
-      reviews: 200,
-      image: require("../../assets/images/anh3.jpg"),
-    },
-  ];
+  const loadHotels = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  // Mock data for nearby hotels
-  const nearbyHotels: Hotel[] = [
-    {
-      id: 4,
-      name: "Malon Greens",
-      location: "Mumbai, Maharashtra",
-      price: 110,
-      rating: 4.0,
-      reviews: 80,
-      image: require("../../assets/images/anh3.jpg"),
-    },
-    {
-      id: 5,
-      name: "Sabro Prime",
-      location: "Mumbai, Maharashtra",
-      price: 90,
-      rating: 5.0,
-      reviews: 76,
-      image: require("../../assets/images/anh2.jpg"),
-    },
-    {
-      id: 6,
-      name: "Peradise Mint",
-      location: "Mumbai, Maharashtra",
-      price: 120,
-      rating: 4.0,
-      reviews: 115,
-      image: require("../../assets/images/anh1.jpg"),
-    },
-  ];
+      // Load tất cả hotels để lấy cities và featured hotels
+      const [bestHotelsData, featuredHotelsData, allHotelsData] =
+        await Promise.all([
+          getBestHotels().catch((err) => {
+            console.error("Error loading best hotels:", err);
+            return [];
+          }),
+          getFeaturedHotels().catch((err) => {
+            console.error("Error loading featured hotels:", err);
+            return [];
+          }),
+          getAllHotels().catch((err) => {
+            console.error("Error loading all hotels:", err);
+            return [];
+          }),
+        ]);
+
+      // Convert API response sang Hotel type
+      const bestHotelsConverted = convertHotelResponsesToHotels(
+        bestHotelsData,
+        require("../../assets/images/anh1.jpg")
+      );
+      const featuredHotelsConverted = convertHotelResponsesToHotels(
+        featuredHotelsData,
+        require("../../assets/images/anh2.jpg")
+      );
+
+      // Tạo cities từ hotels
+      const defaultImages = [
+        require("../../assets/images/anh1.jpg"),
+        require("../../assets/images/anh2.jpg"),
+        require("../../assets/images/anh3.jpg"),
+        require("../../assets/images/anh4.jpg"),
+        require("../../assets/images/anh5.jpg"),
+        require("../../assets/images/anh6.jpg"),
+      ];
+      const citiesFromHotels = getCitiesFromHotels(
+        allHotelsData,
+        defaultImages
+      );
+
+      setBestHotels(bestHotelsConverted);
+      setNearbyHotels(featuredHotelsConverted);
+      setCities(citiesFromHotels);
+    } catch (err: any) {
+      console.error("Error loading hotels:", err);
+      setError(err.message || "Không thể tải danh sách khách sạn");
+      Alert.alert("Lỗi", err.message || "Không thể tải danh sách khách sạn");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mock data for cities (có thể lấy từ API sau)
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -124,64 +111,90 @@ export default function HomepageScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* City Categories */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.cityScroll}
-          contentContainerStyle={styles.cityScrollContent}
-        >
-          {cities.map((city) => (
-            <CityCard key={city.id} city={city} />
-          ))}
-        </ScrollView>
-
-        {/* Best Hotels Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Best Hotels</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
-
+        {cities.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.hotelScrollContent}
+            style={styles.cityScroll}
+            contentContainerStyle={styles.cityScrollContent}
           >
-            {bestHotels.map((hotel) => (
-              <HotelCard
-                key={hotel.id}
-                hotel={hotel}
-                isFavorite={isFavorite(hotel.id)}
-                onToggleFavorite={toggleFavorite}
-                variant="vertical"
-              />
+            {cities.map((city) => (
+              <CityCard key={city.id} city={city} />
             ))}
           </ScrollView>
-        </View>
+        )}
 
-        {/* Nearby Hotels Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Nearby your location</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Đang tải...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadHotels}>
+              <Text style={styles.retryButtonText}>Thử lại</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          <>
+            {/* Best Hotels Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Best Hotels</Text>
+                <TouchableOpacity>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.nearbyHotelsContainer}>
-            {nearbyHotels.map((hotel) => (
-              <HotelCard
-                key={hotel.id}
-                hotel={hotel}
-                isFavorite={isFavorite(hotel.id)}
-                onToggleFavorite={toggleFavorite}
-                variant="horizontal"
-              />
-            ))}
-          </View>
-        </View>
+              {bestHotels.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.hotelScrollContent}
+                >
+                  {bestHotels.map((hotel) => (
+                    <HotelCard
+                      key={hotel.id}
+                      hotel={hotel}
+                      isFavorite={isFavorite(hotel.id)}
+                      onToggleFavorite={toggleFavorite}
+                      variant="vertical"
+                    />
+                  ))}
+                </ScrollView>
+              ) : (
+                <Text style={styles.emptyText}>Không có khách sạn nào</Text>
+              )}
+            </View>
+
+            {/* Nearby Hotels Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Nearby your location</Text>
+                <TouchableOpacity>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
+
+              {nearbyHotels.length > 0 ? (
+                <View style={styles.nearbyHotelsContainer}>
+                  {nearbyHotels.map((hotel) => (
+                    <HotelCard
+                      key={hotel.id}
+                      hotel={hotel}
+                      isFavorite={isFavorite(hotel.id)}
+                      onToggleFavorite={toggleFavorite}
+                      variant="horizontal"
+                    />
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.emptyText}>Không có khách sạn nào</Text>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -233,5 +246,46 @@ const styles = StyleSheet.create({
   },
   nearbyHotelsContainer: {
     gap: 0,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+    paddingHorizontal: Spacing.xl,
+  },
+  errorText: {
+    fontSize: Typography.md,
+    color: Colors.error,
+    textAlign: "center",
+    marginBottom: Spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: Colors.background,
+    fontSize: Typography.md,
+    fontWeight: Typography.semiBold,
+  },
+  emptyText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    paddingVertical: Spacing.xl,
   },
 });

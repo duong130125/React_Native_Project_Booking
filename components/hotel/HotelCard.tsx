@@ -71,7 +71,6 @@ export const HotelCard: React.FC<HotelCardProps> = ({
             />
             <Text style={styles.locationText}>{hotel.location}</Text>
           </View>
-          <Text style={styles.priceText}>${hotel.price}/night</Text>
         </View>
       </TouchableOpacity>
     );
@@ -107,7 +106,6 @@ export const HotelCard: React.FC<HotelCardProps> = ({
           />
           <Text style={styles.locationText}>{hotel.location}</Text>
         </View>
-        <Text style={styles.priceText}>${hotel.price}/night</Text>
       </View>
     </TouchableOpacity>
   );
@@ -145,7 +143,7 @@ const styles = StyleSheet.create({
     top: Spacing.md,
     right: Spacing.md,
   },
-  
+
   // Horizontal Card
   horizontalCard: {
     flexDirection: "row",
@@ -187,7 +185,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     justifyContent: "space-between",
   },
-  
+
   // Common
   verticalInfo: {
     padding: Spacing.lg,
@@ -220,10 +218,4 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.textSecondary,
   },
-  priceText: {
-    fontSize: Typography.md,
-    fontWeight: Typography.bold,
-    color: Colors.text,
-  },
 });
-

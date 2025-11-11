@@ -76,7 +76,7 @@ export default function TabLayout() {
             />
           ),
           tabBarLabel: ({ focused, color }) =>
-            focused ? <Text style={{ color }}>Orders</Text> : null,
+            focused ? <Text style={{ color }}>Booking</Text> : null,
         }}
       />
       <Tabs.Screen

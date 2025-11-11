@@ -7,6 +7,9 @@ import {
   ForgotPasswordRequest,
   VerifyOtpRequest,
   OtpResponse,
+  UserUpdateRequest,
+  ChangePasswordRequest,
+  ResetPasswordRequest,
 } from "../types/auth";
 import axiosInstance from "../utils/axiosInstance";
 
@@ -56,6 +59,30 @@ export async function checkEmailExists(email: string): Promise<boolean> {
   return response.data.data;
 }
 
+// Cập nhật thông tin profile
+export async function updateUserProfile(
+  userId: number,
+  updateRequest: UserUpdateRequest
+): Promise<UserResponse> {
+  const response = await axiosInstance.put<APIResponse<UserResponse>>(
+    `auth/user/${userId}`,
+    updateRequest
+  );
+  return response.data.data;
+}
+
+// Đổi mật khẩu
+export async function changePassword(
+  userId: number,
+  changePasswordRequest: ChangePasswordRequest
+): Promise<{ success: boolean; message: string }> {
+  const response = await axiosInstance.put<APIResponse<{ success: boolean; message: string }>>(
+    `auth/user/${userId}/change-password`,
+    changePasswordRequest
+  );
+  return response.data.data;
+}
+
 // Quên mật khẩu (nếu API được bật)
 export async function forgotPassword(
   forgotPasswordRequest: ForgotPasswordRequest
@@ -74,6 +101,17 @@ export async function verifyOtp(
   const response = await axiosInstance.post<APIResponse<OtpResponse>>(
     "auth/verify-otp",
     verifyOtpRequest
+  );
+  return response.data.data;
+}
+
+// Reset mật khẩu (nếu API được bật)
+export async function resetPassword(
+  resetPasswordRequest: ResetPasswordRequest
+): Promise<OtpResponse> {
+  const response = await axiosInstance.post<APIResponse<OtpResponse>>(
+    "auth/reset-password",
+    resetPasswordRequest
   );
   return response.data.data;
 }

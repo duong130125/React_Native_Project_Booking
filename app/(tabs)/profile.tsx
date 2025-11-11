@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -13,7 +15,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUserById } from "../../apis/auth";
+import { UserResponse } from "../../types/auth";
+import { clearAllTokens } from "../../utils/clearToken";
 
 interface MenuItem {
   id: string;
@@ -28,27 +32,139 @@ interface MenuItem {
 export default function ProfileScreen() {
   const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
-
-  // Get user data from AsyncStorage
-  const [userData, setUserData] = useState({
-    fullName: "Curtis Weaver",
-    email: "curtis.weaver@example.com",
-    avatar: require("../../assets/images/anh1.jpg"),
-  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userData, setUserData] = useState<UserResponse | null>(null);
 
   useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const fullName = await AsyncStorage.getItem("fullName");
-        const email = await AsyncStorage.getItem("email");
-        if (fullName) setUserData((prev) => ({ ...prev, fullName }));
-        if (email) setUserData((prev) => ({ ...prev, email }));
-      } catch (error) {
-        console.error("Error loading user data:", error);
-      }
-    };
     loadUserData();
   }, []);
+
+  const loadUserData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Thử lấy userId từ AsyncStorage
+      let userId = await AsyncStorage.getItem("userId");
+      console.log("🔍 Profile - userId from AsyncStorage:", userId);
+
+      // Nếu không có userId, thử lấy từ user object
+      if (!userId) {
+        const userDataStr = await AsyncStorage.getItem("user");
+        console.log("🔍 Profile - user object from AsyncStorage:", userDataStr);
+        if (userDataStr) {
+          try {
+            const userData = JSON.parse(userDataStr);
+            if (userData.id) {
+              userId = userData.id.toString();
+              console.log("🔍 Profile - userId from user object:", userId);
+              // Lưu lại userId để lần sau dễ truy cập
+              if (userId) {
+                await AsyncStorage.setItem("userId", userId);
+              }
+            }
+          } catch (e) {
+            console.error("❌ Error parsing user data:", e);
+          }
+        }
+      }
+
+      // Nếu vẫn không có userId, thử lấy từ email và dùng getUserByEmail
+      if (!userId) {
+        const email = await AsyncStorage.getItem("email");
+        console.log("🔍 Profile - email from AsyncStorage:", email);
+        if (email) {
+          try {
+            // Thử dùng getUserByEmail
+            const { getUserByEmail } = await import("../../apis/auth");
+            const user = await getUserByEmail(email);
+            if (user && user.id) {
+              userId = user.id.toString();
+              await AsyncStorage.setItem("userId", userId);
+              setUserData(user);
+              await AsyncStorage.setItem("fullName", user.fullName);
+              await AsyncStorage.setItem("email", user.email);
+              if (user.phoneNumber) {
+                await AsyncStorage.setItem("phoneNumber", user.phoneNumber);
+              }
+              return; // Thành công, return sớm
+            }
+          } catch (emailError: any) {
+            console.error("❌ Error getting user by email:", emailError);
+          }
+        }
+
+        // Nếu vẫn không có userId sau tất cả các cách
+        Alert.alert(
+          "Lỗi",
+          "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại.",
+          [
+            {
+              text: "OK",
+              onPress: () => router.replace("/auth" as any),
+            },
+          ]
+        );
+        return;
+      }
+
+      console.log("🔍 Profile - Calling getUserById with userId:", userId);
+      const user = await getUserById(Number(userId));
+      console.log("✅ Profile - User data loaded:", user);
+
+      setUserData(user);
+
+      // Lưu vào AsyncStorage để sử dụng sau
+      await AsyncStorage.setItem("userId", userId); // Đảm bảo userId được lưu
+      await AsyncStorage.setItem("fullName", user.fullName);
+      await AsyncStorage.setItem("email", user.email);
+      if (user.phoneNumber) {
+        await AsyncStorage.setItem("phoneNumber", user.phoneNumber);
+      }
+    } catch (error: any) {
+      console.error("❌ Error loading user data:", error);
+      console.error("❌ Error details:", JSON.stringify(error, null, 2));
+
+      let errorMessage = "Không thể tải thông tin người dùng";
+
+      if (error.response) {
+        // API error
+        const status = error.response.status;
+        if (status === 401) {
+          errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+        } else if (status === 404) {
+          errorMessage = "Không tìm thấy thông tin người dùng.";
+        } else if (status === 403) {
+          errorMessage = "Bạn không có quyền truy cập thông tin này.";
+        } else {
+          errorMessage =
+            error.response.data?.message || error.message || errorMessage;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setError(errorMessage);
+
+      Alert.alert("Lỗi", errorMessage, [
+        {
+          text: "Thử lại",
+          onPress: loadUserData,
+        },
+        {
+          text: "Đăng nhập lại",
+          onPress: async () => {
+            await clearAllTokens();
+            await AsyncStorage.removeItem("userId");
+            router.replace("/auth" as any);
+          },
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const menuItems: MenuItem[] = [
     {
@@ -61,7 +177,7 @@ export default function ProfileScreen() {
       id: "password",
       title: "Change Password",
       icon: "key-outline",
-      onPress: () => router.push("/forgot-password" as any),
+      onPress: () => router.push("/change-password" as any),
     },
     {
       id: "payment",
@@ -98,18 +214,29 @@ export default function ProfileScreen() {
     },
   ];
 
-  const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
+  const handleLogout = async () => {
+    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
       {
-        text: "Cancel",
+        text: "Hủy",
         style: "cancel",
       },
       {
-        text: "Logout",
+        text: "Đăng xuất",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.clear();
-          router.replace("/auth" as any);
+          try {
+            // Xóa tất cả tokens và user data
+            await clearAllTokens();
+            await AsyncStorage.removeItem("userId");
+            await AsyncStorage.removeItem("fullName");
+            await AsyncStorage.removeItem("email");
+            await AsyncStorage.removeItem("phoneNumber");
+            router.replace("/auth" as any);
+          } catch (error) {
+            console.error("Error during logout:", error);
+            // Vẫn chuyển về auth screen dù có lỗi
+            router.replace("/auth" as any);
+          }
         },
       },
     ]);
@@ -130,21 +257,57 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Profile Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.profileImageContainer}>
-            <Image source={userData.avatar} style={styles.profileImage} />
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.loadingText}>Đang tải thông tin...</Text>
           </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{userData.fullName}</Text>
-            <Text style={styles.profileEmail}>{userData.email}</Text>
+        ) : userData ? (
+          <View style={styles.profileCard}>
+            <View style={styles.profileImageContainer}>
+              {userData.avatarUrl && userData.avatarUrl.trim() !== "" ? (
+                <Image
+                  source={{ uri: userData.avatarUrl }}
+                  style={styles.profileImage}
+                />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Ionicons name="person" size={40} color="#FFFFFF" />
+                </View>
+              )}
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{userData.fullName}</Text>
+              <Text style={styles.profileEmail}>{userData.email}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push("/edit-profile" as any)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push("/edit-profile" as any)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
+        ) : (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color="#DC2626" />
+            <Text style={styles.errorText}>
+              {error || "Không tải được thông tin"}
+            </Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadUserData}>
+              <Text style={styles.retryButtonText}>Thử lại</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.loginButton}
+              onPress={async () => {
+                await clearAllTokens();
+                await AsyncStorage.removeItem("userId");
+                router.replace("/auth" as any);
+              }}
+            >
+              <Text style={styles.loginButtonText}>Đăng nhập lại</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Menu Items */}
         <View style={styles.menuContainer}>
@@ -238,6 +401,16 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "#FFFFFF",
   },
+  profileImagePlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   profileInfo: {
     flex: 1,
   },
@@ -294,5 +467,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  loadingContainer: {
+    backgroundColor: "#4F46E5",
+    borderRadius: 16,
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  loadingText: {
+    color: "#FFFFFF",
+    marginTop: 12,
+    fontSize: 14,
+  },
+  errorContainer: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#DC2626",
+    marginTop: 12,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: "#DC2626",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  loginButton: {
+    backgroundColor: "#4F46E5",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  loginButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

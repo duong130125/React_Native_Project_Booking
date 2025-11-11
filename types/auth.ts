@@ -31,6 +31,7 @@ export interface UserResponse {
   phoneNumber?: string;
   birthday?: string;
   genderName?: "MALE" | "FEMALE" | "OTHER";
+  avatarUrl?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -65,4 +66,26 @@ export interface ForgotPasswordRequest {
 export interface VerifyOtpRequest {
   email: string;
   otp: string;
+}
+
+// User Update Request (matching backend UserUpdateRequest)
+export interface UserUpdateRequest {
+  fullName: string;
+  email: string;
+  phoneNumber?: string;
+  birthday: string; // ISO date string
+  gender: "MALE" | "FEMALE" | "OTHER";
+}
+
+// Change Password Request
+export interface ChangePasswordRequest {
+  oldPassword: string;
+  newPassword: string;
+}
+
+// Reset Password Request (matching backend ResetPasswordRequest)
+export interface ResetPasswordRequest {
+  contact: string;
+  otp: string;
+  newPassword: string;
 }

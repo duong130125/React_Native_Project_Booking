@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
 
 const getBaseURL = () => {
   // Ưu tiên biến môi trường
@@ -18,7 +18,7 @@ const getBaseURL = () => {
     // Nếu có biến môi trường hoặc đang dev, có thể là thiết bị thật
     // Bạn có thể thay đổi IP này theo IP máy tính của bạn
     // IP WiFi hiện tại: 192.168.1.225 (kiểm tra bằng ipconfig)
-    const devURL = "http://192.168.1.225:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
+    const devURL = "http://10.210.32.134:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
     const emulatorURL = "http://10.0.2.2:8080/api/v1/"; // Emulator
 
     const selectedURL = __DEV__ ? devURL : emulatorURL;
@@ -56,26 +56,71 @@ const axiosInstance = axios.create({
   timeout: 10000, // 10 seconds timeout
 });
 
+// Đảm bảo không có Authorization trong default headers
+if (axiosInstance.defaults.headers.common) {
+  delete axiosInstance.defaults.headers.common["Authorization"];
+}
+
 // Gửi các request kèm theo lên API (thông qua interceptor)
 axiosInstance.interceptors.request.use(
   async (config) => {
     try {
-      // Không gửi token cho các auth endpoints (register, login, etc.)
       const url = config.url || "";
-      const isAuthEndpoint = url.startsWith("auth/");
 
-      if (!isAuthEndpoint) {
-        // Chỉ gửi token cho các endpoints cần authentication
+      // Danh sách các public endpoints không cần authentication
+      // Chỉ các auth endpoints cụ thể là public (register, login, check-email)
+      // Các endpoints khác như getUserById, updateProfile cần authentication
+      const publicAuthEndpoints = [
+        "auth/register",
+        "auth/login",
+        "auth/check-email",
+        "auth/forgot-password",
+        "auth/verify-otp",
+        "auth/reset-password",
+      ];
+
+      const publicEndpoints = [
+        ...publicAuthEndpoints,
+        "hotels", // Hotel endpoints (public) - GET requests
+        "rooms", // Room endpoints (public) - GET requests
+        "reviews", // Review endpoints (public - để xem) - GET requests
+      ];
+
+      // Kiểm tra xem có phải public auth endpoint không
+      const isPublicAuthEndpoint = publicAuthEndpoints.some((endpoint) =>
+        url.startsWith(endpoint)
+      );
+
+      // Kiểm tra xem có phải public endpoint khác không (hotels, rooms, reviews)
+      const isPublicOtherEndpoint =
+        url.startsWith("hotels") ||
+        url.startsWith("rooms") ||
+        url.startsWith("reviews");
+
+      const isPublicEndpoint = isPublicAuthEndpoint || isPublicOtherEndpoint;
+
+      if (isPublicEndpoint) {
+        // XÓA HOÀN TOÀN Authorization header cho public endpoints
+        delete config.headers["Authorization"];
+        delete config.headers.common?.["Authorization"];
+        // Đảm bảo không có trong bất kỳ đâu
+        if (config.headers) {
+          config.headers["Authorization"] = undefined;
+        }
+      } else {
+        // Chỉ gửi token cho các endpoints cần authentication (bookings, payments, etc.)
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (accessToken) {
           config.headers["Authorization"] = `Bearer ${accessToken}`;
+        } else {
+          // Nếu không có token, xóa header
+          delete config.headers["Authorization"];
         }
-      } else {
-        // Xóa Authorization header nếu có (để tránh gửi token cũ không hợp lệ)
-        delete config.headers["Authorization"];
       }
     } catch (error) {
       console.error("Error getting token from AsyncStorage:", error);
+      // Nếu có lỗi, xóa Authorization header
+      delete config.headers["Authorization"];
     }
     return config;
   },
@@ -144,10 +189,28 @@ axiosInstance.interceptors.response.use(
     }
 
     // Kiểm tra nếu originalRequest tồn tại và chưa retry
+    // QUAN TRỌNG: Không xử lý refresh token cho các auth endpoints (login, register, etc.)
+    const requestUrl = originalRequest?.url || "";
+    const isAuthEndpoint =
+      requestUrl.includes("auth/login") ||
+      requestUrl.includes("auth/register") ||
+      requestUrl.includes("auth/forgot-password") ||
+      requestUrl.includes("auth/reset-password") ||
+      requestUrl.includes("auth/verify-otp") ||
+      requestUrl.includes("auth/refresh-token");
+
+    // Nếu là auth endpoint và có lỗi 401, reject ngay để component xử lý
+    // KHÔNG xử lý refresh token cho auth endpoints
+    if (isAuthEndpoint && error.response?.status === 401) {
+      // Reject ngay để component có thể xử lý error message
+      return Promise.reject(error);
+    }
+
     if (
       originalRequest &&
       error.response?.status === 401 &&
-      !originalRequest._retry
+      !originalRequest._retry &&
+      !isAuthEndpoint // Chỉ refresh token cho các request không phải auth endpoints
     ) {
       originalRequest._retry = true; // Mark the request to prevent infinite loops
 
@@ -176,35 +239,24 @@ axiosInstance.interceptors.response.use(
             await AsyncStorage.setItem("accessToken", accessToken);
           }
 
-          // Update the Authorization header in the original failed request
-          axiosInstance.defaults.headers.common[
-            "Authorization"
-          ] = `Bearer ${accessToken}`;
+          // Update the Authorization header in the original failed request only
+          // KHÔNG set vào defaults.headers.common để tránh gửi token cho mọi request
           originalRequest.headers["Authorization"] = `Bearer ${accessToken}`;
 
           // Retry the original request with the new access token
           return axiosInstance(originalRequest);
         } else {
-          // Không có refresh token, yêu cầu đăng nhập lại
+          // Không có refresh token, chỉ xóa token và reject
+          // KHÔNG hiển thị Alert ở đây - để component tự xử lý
           await AsyncStorage.removeItem("accessToken");
           await AsyncStorage.removeItem("refreshToken");
-          Alert.alert(
-            "Cảnh báo",
-            "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại"
-          );
           return Promise.reject(error);
         }
       } catch (refreshError: any) {
         // Xóa token nếu refresh thất bại
+        // KHÔNG hiển thị Alert ở đây - để component tự xử lý
         await AsyncStorage.removeItem("accessToken");
         await AsyncStorage.removeItem("refreshToken");
-
-        const errorMessage =
-          refreshError.response?.data?.message ||
-          refreshError.message ||
-          "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại";
-
-        Alert.alert("Cảnh báo", errorMessage);
         return Promise.reject(refreshError);
       }
     }
