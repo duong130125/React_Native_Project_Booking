@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useMemo, useState } from "react";
@@ -144,7 +144,9 @@ export default function SearchScreen() {
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => (searchQuery ? handleSearch(searchQuery) : loadAllHotels())}
+              onPress={() =>
+                searchQuery ? handleSearch(searchQuery) : loadAllHotels()
+              }
             >
               <Text style={styles.retryButtonText}>Thử lại</Text>
             </TouchableOpacity>
@@ -175,7 +177,11 @@ export default function SearchScreen() {
                 ))
               ) : searchQuery ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="search-outline" size={64} color={Colors.border} />
+                  <Ionicons
+                    name="search-outline"
+                    size={64}
+                    color={Colors.border}
+                  />
                   <Text style={styles.emptyStateText}>No results found</Text>
                   <Text style={styles.emptyStateSubtext}>
                     Try searching with different keywords
@@ -183,8 +189,10 @@ export default function SearchScreen() {
                 </View>
               ) : (
                 <View style={styles.emptyState}>
-                  <Ionicons name="hotel-outline" size={64} color={Colors.border} />
-                  <Text style={styles.emptyStateText}>Không có khách sạn nào</Text>
+                  <FontAwesome5 name="hotel" size={64} color={Colors.border} />
+                  <Text style={styles.emptyStateText}>
+                    Không có khách sạn nào
+                  </Text>
                 </View>
               )}
             </View>

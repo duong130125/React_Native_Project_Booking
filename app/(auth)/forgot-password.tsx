@@ -1,32 +1,148 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView as RNSafeAreaView } from "react-native-safe-area-context";
+import { forgotPassword, getUserByEmail } from "../../apis/auth";
+import ErrorNotification from "../../components/ErrorNotification";
+import SuccessNotification from "../../components/SuccessNotification";
+import { ForgotPasswordRequest } from "../../types/auth";
+import { validateEmail, validatePhoneNumber } from "../../utils/validation";
 
 type ContactMethod = "sms" | "email" | null;
 
 export default function ForgotPasswordScreen() {
   const [selectedMethod, setSelectedMethod] = useState<ContactMethod>(null);
+  const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [showErrorNotification, setShowErrorNotification] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const router = useRouter();
 
-  const handleContinue = () => {
-    if (selectedMethod) {
-      router.push({
-        pathname: "/otp-verification",
-        params: { method: selectedMethod },
-      } as any);
+  const formatPhoneNumber = (text: string) => {
+    const cleaned = text.replace(/\D/g, "");
+    if (cleaned.length === 0) return "";
+    if (cleaned.length <= 3) return `(${cleaned}`;
+    if (cleaned.length <= 6)
+      return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(
+      6,
+      10
+    )}`;
+  };
+
+  const handleContinue = async () => {
+    if (!selectedMethod) {
+      setErrorMessage("Vui lòng chọn phương thức nhận OTP");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    let contact = "";
+    let validationError: string | null = null;
+
+    if (selectedMethod === "email") {
+      validationError = validateEmail(email);
+      if (validationError) {
+        setErrorMessage(validationError);
+        setShowErrorNotification(true);
+        return;
+      }
+      contact = email.trim();
+    } else if (selectedMethod === "sms") {
+      // Remove formatting from phone number
+      const cleanedPhone = phoneNumber.replace(/\D/g, "");
+      validationError = validatePhoneNumber(cleanedPhone);
+      if (validationError) {
+        setErrorMessage(validationError);
+        setShowErrorNotification(true);
+        return;
+      }
+      contact = cleanedPhone;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Gọi API forgot password
+      const forgotPasswordRequest: ForgotPasswordRequest = {
+        contact: contact,
+      };
+
+      const response = await forgotPassword(forgotPasswordRequest);
+
+      if (response.success) {
+        // Lưu contact vào AsyncStorage để dùng ở các screen sau
+        await AsyncStorage.setItem("forgotPasswordContact", contact);
+        await AsyncStorage.setItem("forgotPasswordMethod", selectedMethod);
+
+        // Navigate to OTP verification
+        router.push({
+          pathname: "/otp-verification",
+          params: {
+            method: selectedMethod,
+            contact: contact,
+          },
+        } as any);
+      } else {
+        setErrorMessage(
+          response.message || "Không thể gửi OTP. Vui lòng thử lại."
+        );
+        setShowErrorNotification(true);
+      }
+    } catch (error: any) {
+      console.error("Error sending forgot password request:", error);
+      let errorMsg = "Không thể gửi OTP. Vui lòng thử lại.";
+      if (error.response?.status === 404) {
+        errorMsg = "Email hoặc số điện thoại không tồn tại trong hệ thống";
+      } else if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "Thông tin không hợp lệ";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
+    } finally {
+      setLoading(false);
     }
   };
+
+  // Load user info when method is selected
+  React.useEffect(() => {
+    const loadUserInfo = async () => {
+      if (selectedMethod === "email" && email.trim()) {
+        const emailError = validateEmail(email);
+        if (!emailError) {
+          try {
+            const user = await getUserByEmail(email.trim());
+            // User exists, can proceed
+          } catch (error) {
+            // User not found, but we'll let the API handle it
+          }
+        }
+      }
+    };
+
+    // Debounce
+    const timeoutId = setTimeout(loadUserInfo, 500);
+    return () => clearTimeout(timeoutId);
+  }, [email, selectedMethod]);
 
   return (
     <RNSafeAreaView style={styles.container}>
@@ -49,9 +165,9 @@ export default function ForgotPasswordScreen() {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Forgot Password</Text>
+            <Text style={styles.title}>Quên mật khẩu</Text>
             <Text style={styles.subtitle}>
-              Select which contact details should we use to reset your password
+              Chọn phương thức nhận mã OTP để đặt lại mật khẩu
             </Text>
           </View>
 
@@ -64,63 +180,16 @@ export default function ForgotPasswordScreen() {
 
           {/* Contact Method Options */}
           <View style={styles.optionsContainer}>
-            {/* SMS Option */}
-            <TouchableOpacity
-              style={[
-                styles.optionCard,
-                selectedMethod === "sms" && styles.optionCardSelected,
-              ]}
-              onPress={() => setSelectedMethod("sms")}
-              activeOpacity={0.7}
-            >
-              <View style={styles.optionLeft}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    selectedMethod === "sms"
-                      ? styles.iconContainerActive
-                      : styles.iconContainerInactive,
-                  ]}
-                >
-                  <Ionicons
-                    name="chatbubble-outline"
-                    size={24}
-                    color={selectedMethod === "sms" ? "#FFFFFF" : "#6B7280"}
-                  />
-                </View>
-                <View style={styles.optionTextContainer}>
-                  <Text style={styles.optionTitle}>Send OTP via SMS</Text>
-                  <Text
-                    style={[
-                      styles.optionValue,
-                      selectedMethod === "sms"
-                        ? styles.optionValueActive
-                        : styles.optionValueInactive,
-                    ]}
-                  >
-                    (209) 555-0104
-                  </Text>
-                </View>
-              </View>
-              <View
-                style={[
-                  styles.radioButton,
-                  selectedMethod === "sms" && styles.radioButtonSelected,
-                ]}
-              >
-                {selectedMethod === "sms" && (
-                  <View style={styles.radioButtonInner} />
-                )}
-              </View>
-            </TouchableOpacity>
-
             {/* Email Option */}
             <TouchableOpacity
               style={[
                 styles.optionCard,
                 selectedMethod === "email" && styles.optionCardSelected,
               ]}
-              onPress={() => setSelectedMethod("email")}
+              onPress={() => {
+                setSelectedMethod("email");
+                setPhoneNumber("");
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.optionLeft}>
@@ -139,17 +208,29 @@ export default function ForgotPasswordScreen() {
                   />
                 </View>
                 <View style={styles.optionTextContainer}>
-                  <Text style={styles.optionTitle}>Send OTP via Email</Text>
-                  <Text
-                    style={[
-                      styles.optionValue,
-                      selectedMethod === "email"
-                        ? styles.optionValueActive
-                        : styles.optionValueInactive,
-                    ]}
-                  >
-                    curtis.weaver@example.com
-                  </Text>
+                  <Text style={styles.optionTitle}>Gửi OTP qua Email</Text>
+                  {selectedMethod === "email" ? (
+                    <TextInput
+                      style={[
+                        styles.optionInput,
+                        error && styles.optionInputError,
+                      ]}
+                      placeholder="Nhập email của bạn"
+                      placeholderTextColor="#9CA3AF"
+                      value={email}
+                      onChangeText={(text) => {
+                        setEmail(text);
+                        setError(null);
+                      }}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  ) : (
+                    <Text style={styles.optionValueInactive}>
+                      Nhập email để nhận mã OTP
+                    </Text>
+                  )}
                 </View>
               </View>
               <View
@@ -163,22 +244,121 @@ export default function ForgotPasswordScreen() {
                 )}
               </View>
             </TouchableOpacity>
+
+            {/* SMS Option */}
+            <TouchableOpacity
+              style={[
+                styles.optionCard,
+                selectedMethod === "sms" && styles.optionCardSelected,
+              ]}
+              onPress={() => {
+                setSelectedMethod("sms");
+                setEmail("");
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.optionLeft}>
+                <View
+                  style={[
+                    styles.iconContainer,
+                    selectedMethod === "sms"
+                      ? styles.iconContainerActive
+                      : styles.iconContainerInactive,
+                  ]}
+                >
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={24}
+                    color={selectedMethod === "sms" ? "#FFFFFF" : "#6B7280"}
+                  />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={styles.optionTitle}>Gửi OTP qua SMS</Text>
+                  {selectedMethod === "sms" ? (
+                    <TextInput
+                      style={[
+                        styles.optionInput,
+                        error && styles.optionInputError,
+                      ]}
+                      placeholder="Nhập số điện thoại"
+                      placeholderTextColor="#9CA3AF"
+                      value={phoneNumber}
+                      onChangeText={(text) => {
+                        setPhoneNumber(formatPhoneNumber(text));
+                        setError(null);
+                      }}
+                      keyboardType="phone-pad"
+                      maxLength={14}
+                    />
+                  ) : (
+                    <Text style={styles.optionValueInactive}>
+                      Nhập số điện thoại để nhận mã OTP
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.radioButton,
+                  selectedMethod === "sms" && styles.radioButtonSelected,
+                ]}
+              >
+                {selectedMethod === "sms" && (
+                  <View style={styles.radioButtonInner} />
+                )}
+              </View>
+            </TouchableOpacity>
           </View>
+
+          {error && <Text style={styles.errorText}>{error}</Text>}
 
           {/* Continue Button */}
           <TouchableOpacity
             style={[
               styles.continueButton,
-              !selectedMethod && styles.continueButtonDisabled,
+              (!selectedMethod ||
+                loading ||
+                (selectedMethod === "email" && !email.trim()) ||
+                (selectedMethod === "sms" && !phoneNumber.trim())) &&
+                styles.continueButtonDisabled,
             ]}
             onPress={handleContinue}
-            disabled={!selectedMethod}
+            disabled={
+              !selectedMethod ||
+              loading ||
+              (selectedMethod === "email" && !email.trim()) ||
+              (selectedMethod === "sms" && !phoneNumber.trim())
+            }
             activeOpacity={0.8}
           >
-            <Text style={styles.continueButtonText}>Continue</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.continueButtonText}>Tiếp tục</Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <SuccessNotification
+          message="OTP đã được gửi thành công!"
+          onClose={() => setShowSuccessNotification(false)}
+          autoHide={true}
+          duration={2000}
+        />
+      )}
+
+      {/* Error Notification */}
+      {showErrorNotification && (
+        <ErrorNotification
+          message={errorMessage}
+          onClose={() => setShowErrorNotification(false)}
+          autoHide={true}
+          duration={4000}
+        />
+      )}
     </RNSafeAreaView>
   );
 }
@@ -288,6 +468,22 @@ const styles = StyleSheet.create({
   },
   optionValueInactive: {
     color: "#6B7280",
+  },
+  optionInput: {
+    fontSize: 14,
+    color: "#111827",
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  optionInputError: {
+    borderBottomColor: "#EF4444",
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#EF4444",
+    marginBottom: 16,
+    textAlign: "center",
   },
   radioButton: {
     width: 24,

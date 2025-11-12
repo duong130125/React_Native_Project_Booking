@@ -57,14 +57,14 @@ export interface OtpResponse {
   otp?: string;
 }
 
-// Forgot Password Request
+// Forgot Password Request (matching backend)
 export interface ForgotPasswordRequest {
-  email: string;
+  contact: string; // email hoặc phone number
 }
 
-// Verify OTP Request
+// Verify OTP Request (matching backend)
 export interface VerifyOtpRequest {
-  email: string;
+  contact: string; // email hoặc phone number
   otp: string;
 }
 
@@ -74,7 +74,7 @@ export interface UserUpdateRequest {
   email: string;
   phoneNumber?: string;
   birthday: string; // ISO date string
-  gender: "MALE" | "FEMALE" | "OTHER";
+  genderName: "MALE" | "FEMALE" | "OTHER";
 }
 
 // Change Password Request

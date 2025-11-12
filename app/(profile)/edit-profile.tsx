@@ -1,4 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -15,10 +18,18 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getUserById, updateUserProfile } from "../../apis/auth";
+import { getUserById, updateUserProfile, uploadAvatar } from "../../apis/auth";
+import ErrorNotification from "../../components/ErrorNotification";
+import SuccessNotification from "../../components/SuccessNotification";
 import { UserResponse, UserUpdateRequest } from "../../types/auth";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import {
+  hasValidationErrors,
+  validateBirthday,
+  validateEmail,
+  validateFullName,
+  validateGender,
+  validatePhoneNumber,
+} from "../../utils/validation";
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -31,6 +42,19 @@ export default function EditProfileScreen() {
   const [dateOfBirth, setDateOfBirth] = useState<Date | null>(null);
   const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">("MALE");
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<{
+    fullName?: string;
+    email?: string;
+    phoneNumber?: string;
+    birthday?: string;
+    gender?: string;
+  }>({});
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showErrorNotification, setShowErrorNotification] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -57,6 +81,9 @@ export default function EditProfileScreen() {
       if (user.genderName) {
         setGender(user.genderName);
       }
+      if (user.avatarUrl) {
+        setAvatarUri(user.avatarUrl);
+      }
     } catch (error: any) {
       console.error("Error loading user data:", error);
       Alert.alert("Lỗi", error.message || "Không thể tải thông tin người dùng");
@@ -77,6 +104,135 @@ export default function EditProfileScreen() {
     )}`;
   };
 
+  // Get cleaned phone number (remove formatting)
+  const getCleanedPhoneNumber = (formatted: string): string => {
+    return formatted.replace(/\D/g, "");
+  };
+
+  // Request permissions for image picker
+  const requestImagePickerPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Quyền truy cập",
+        "Cần quyền truy cập thư viện ảnh để chọn avatar"
+      );
+      return false;
+    }
+    return true;
+  };
+
+  // Handle image picker
+  const handleImagePicker = async () => {
+    const hasPermission = await requestImagePickerPermission();
+    if (!hasPermission) return;
+
+    Alert.alert("Chọn ảnh đại diện", "Bạn muốn chọn ảnh từ đâu?", [
+      {
+        text: "Hủy",
+        style: "cancel",
+      },
+      {
+        text: "Thư viện ảnh",
+        onPress: async () => {
+          try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+              const selectedImage = result.assets[0];
+              setAvatarUri(selectedImage.uri);
+              await handleUploadAvatar(selectedImage.uri);
+            }
+          } catch (error: any) {
+            console.error("Error picking image:", error);
+            setErrorMessage("Không thể chọn ảnh");
+            setShowErrorNotification(true);
+          }
+        },
+      },
+      {
+        text: "Camera",
+        onPress: async () => {
+          try {
+            const { status } =
+              await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== "granted") {
+              Alert.alert(
+                "Quyền truy cập",
+                "Cần quyền truy cập camera để chụp ảnh"
+              );
+              return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+              const selectedImage = result.assets[0];
+              setAvatarUri(selectedImage.uri);
+              await handleUploadAvatar(selectedImage.uri);
+            }
+          } catch (error: any) {
+            console.error("Error taking photo:", error);
+            setErrorMessage("Không thể chụp ảnh");
+            setShowErrorNotification(true);
+          }
+        },
+      },
+    ]);
+  };
+
+  // Handle upload avatar
+  const handleUploadAvatar = async (imageUri: string) => {
+    try {
+      setUploadingAvatar(true);
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) {
+        setErrorMessage("Không tìm thấy thông tin người dùng");
+        setShowErrorNotification(true);
+        return;
+      }
+
+      const updatedUser = await uploadAvatar(Number(userId), imageUri);
+
+      // Cập nhật avatar URL
+      setAvatarUri(updatedUser.avatarUrl || null);
+      setUserData(updatedUser);
+
+      setSuccessMessage("Cập nhật avatar thành công!");
+      setShowSuccessNotification(true);
+    } catch (error: any) {
+      console.error("Error uploading avatar:", error);
+
+      let errorMsg = "Không thể upload avatar";
+      if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "File không hợp lệ";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
+
+      // Revert to old avatar if upload fails
+      if (userData?.avatarUrl) {
+        setAvatarUri(userData.avatarUrl);
+      } else {
+        setAvatarUri(null);
+      }
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const formatDate = (date: Date | null): string => {
     if (!date) return "Chọn ngày sinh";
     const months = [
@@ -93,17 +249,50 @@ export default function EditProfileScreen() {
       "November",
       "December",
     ];
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    return `${
+      months[date.getMonth()]
+    } ${date.getDate()}, ${date.getFullYear()}`;
   };
 
   const handleUpdate = async () => {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert("Lỗi", "Vui lòng điền đầy đủ thông tin");
-      return;
+    // Validate all fields
+    const cleanedPhone = getCleanedPhoneNumber(mobileNumber);
+    const birthdayString = dateOfBirth
+      ? dateOfBirth.toISOString().split("T")[0]
+      : "";
+
+    const errors: {
+      fullName?: string;
+      email?: string;
+      phoneNumber?: string;
+      birthday?: string;
+      gender?: string;
+    } = {};
+
+    const fullNameError = validateFullName(name);
+    if (fullNameError) errors.fullName = fullNameError;
+
+    const emailError = validateEmail(email);
+    if (emailError) errors.email = emailError;
+
+    // Phone number is optional, but if provided, must be valid
+    if (cleanedPhone && cleanedPhone.trim() !== "") {
+      const phoneError = validatePhoneNumber(cleanedPhone);
+      if (phoneError) errors.phoneNumber = phoneError;
     }
 
-    if (!dateOfBirth) {
-      Alert.alert("Lỗi", "Vui lòng chọn ngày sinh");
+    const birthdayError = validateBirthday(birthdayString);
+    if (birthdayError) errors.birthday = birthdayError;
+
+    const genderError = validateGender(gender);
+    if (genderError) errors.gender = genderError;
+
+    setValidationErrors(errors);
+
+    // If there are validation errors, don't proceed
+    if (hasValidationErrors(errors)) {
+      setErrorMessage("Vui lòng kiểm tra lại thông tin đã nhập");
+      setShowErrorNotification(true);
       return;
     }
 
@@ -111,20 +300,25 @@ export default function EditProfileScreen() {
       setSaving(true);
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) {
-        Alert.alert("Lỗi", "Không tìm thấy thông tin người dùng");
+        setErrorMessage("Không tìm thấy thông tin người dùng");
+        setShowErrorNotification(true);
         return;
       }
 
       const updateRequest: UserUpdateRequest = {
         fullName: name.trim(),
         email: email.trim(),
-        phoneNumber: mobileNumber.trim() || undefined,
-        birthday: dateOfBirth.toISOString().split("T")[0],
-        gender: gender,
+        phoneNumber:
+          cleanedPhone && cleanedPhone.trim() !== "" ? cleanedPhone : undefined,
+        birthday: birthdayString,
+        genderName: gender,
       };
 
-      const updatedUser = await updateUserProfile(Number(userId), updateRequest);
-      
+      const updatedUser = await updateUserProfile(
+        Number(userId),
+        updateRequest
+      );
+
       // Cập nhật AsyncStorage
       await AsyncStorage.setItem("fullName", updatedUser.fullName);
       await AsyncStorage.setItem("email", updatedUser.email);
@@ -132,11 +326,30 @@ export default function EditProfileScreen() {
         await AsyncStorage.setItem("phoneNumber", updatedUser.phoneNumber);
       }
 
-      Alert.alert("Thành công", "Cập nhật thông tin thành công");
-      router.back();
+      setSuccessMessage("Cập nhật thông tin thành công!");
+      setShowSuccessNotification(true);
+
+      // Navigate back after 1.5 seconds
+      setTimeout(() => {
+        router.back();
+      }, 1500);
     } catch (error: any) {
       console.error("Error updating profile:", error);
-      Alert.alert("Lỗi", error.message || "Không thể cập nhật thông tin");
+
+      // Handle specific error messages
+      let errorMsg = "Không thể cập nhật thông tin";
+      if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "Thông tin không hợp lệ";
+      } else if (error.response?.status === 404) {
+        errorMsg = "Không tìm thấy người dùng";
+      } else if (error.response?.status === 409) {
+        errorMsg = "Email đã được sử dụng bởi tài khoản khác";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
     } finally {
       setSaving(false);
     }
@@ -166,16 +379,27 @@ export default function EditProfileScreen() {
         {/* Profile Image */}
         <View style={styles.profileImageContainer}>
           <Image
-            source={require("../../assets/images/anh3.jpg")}
+            source={
+              avatarUri
+                ? { uri: avatarUri }
+                : require("../../assets/images/anh3.jpg")
+            }
             style={styles.profileImage}
+            defaultSource={require("../../assets/images/anh3.jpg")}
           />
+          {uploadingAvatar && (
+            <View style={styles.uploadingOverlay}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            </View>
+          )}
           <TouchableOpacity
-            style={styles.cameraButton}
-            onPress={() => {
-              // Handle image picker
-              Alert.alert("Change Photo", "Image picker functionality");
-            }}
+            style={[
+              styles.cameraButton,
+              uploadingAvatar && styles.cameraButtonDisabled,
+            ]}
+            onPress={handleImagePicker}
             activeOpacity={0.8}
+            disabled={uploadingAvatar || loading}
           >
             <Ionicons name="camera" size={20} color="#FFFFFF" />
           </TouchableOpacity>
@@ -185,51 +409,97 @@ export default function EditProfileScreen() {
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Name</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              validationErrors.fullName && styles.inputError,
+            ]}
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              if (validationErrors.fullName) {
+                setValidationErrors({
+                  ...validationErrors,
+                  fullName: undefined,
+                });
+              }
+            }}
             placeholder="Enter your name"
             placeholderTextColor="#9CA3AF"
           />
+          {validationErrors.fullName && (
+            <Text style={styles.errorText}>{validationErrors.fullName}</Text>
+          )}
         </View>
 
         {/* Email Field */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Email Address</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, validationErrors.email && styles.inputError]}
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(text) => {
+              setEmail(text);
+              if (validationErrors.email) {
+                setValidationErrors({ ...validationErrors, email: undefined });
+              }
+            }}
             placeholder="Enter your email"
             placeholderTextColor="#9CA3AF"
             keyboardType="email-address"
             autoCapitalize="none"
           />
+          {validationErrors.email && (
+            <Text style={styles.errorText}>{validationErrors.email}</Text>
+          )}
         </View>
 
         {/* Mobile Number Field */}
         <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>Mobile Number</Text>
+          <Text style={styles.inputLabel}>Mobile Number (Optional)</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              validationErrors.phoneNumber && styles.inputError,
+            ]}
             value={mobileNumber}
-            onChangeText={(text) => setMobileNumber(formatPhoneNumber(text))}
+            onChangeText={(text) => {
+              setMobileNumber(formatPhoneNumber(text));
+              if (validationErrors.phoneNumber) {
+                setValidationErrors({
+                  ...validationErrors,
+                  phoneNumber: undefined,
+                });
+              }
+            }}
             placeholder="(000) 000-0000"
             placeholderTextColor="#9CA3AF"
             keyboardType="phone-pad"
             maxLength={14}
           />
+          {validationErrors.phoneNumber && (
+            <Text style={styles.errorText}>{validationErrors.phoneNumber}</Text>
+          )}
         </View>
 
         {/* Date of Birth Field */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Date of Birth</Text>
           <TouchableOpacity
-            style={styles.dateInput}
+            style={[
+              styles.dateInput,
+              validationErrors.birthday && styles.inputError,
+            ]}
             onPress={() => setShowDatePicker(true)}
             activeOpacity={0.7}
           >
-            <Text style={styles.dateInputText}>{formatDate(dateOfBirth)}</Text>
+            <Text
+              style={[
+                styles.dateInputText,
+                !dateOfBirth && styles.placeholderText,
+              ]}
+            >
+              {formatDate(dateOfBirth)}
+            </Text>
             <Ionicons name="calendar-outline" size={20} color="#6B7280" />
           </TouchableOpacity>
           {showDatePicker && (
@@ -241,10 +511,30 @@ export default function EditProfileScreen() {
                 setShowDatePicker(Platform.OS === "ios");
                 if (selectedDate) {
                   setDateOfBirth(selectedDate);
+                  if (validationErrors.birthday) {
+                    setValidationErrors({
+                      ...validationErrors,
+                      birthday: undefined,
+                    });
+                  }
                 }
               }}
               maximumDate={new Date()}
+              minimumDate={new Date(1900, 0, 1)}
             />
+          )}
+          {Platform.OS === "ios" && showDatePicker && (
+            <View style={styles.datePickerButtons}>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerButtonText}>Xong</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {validationErrors.birthday && (
+            <Text style={styles.errorText}>{validationErrors.birthday}</Text>
           )}
         </View>
 
@@ -256,8 +546,17 @@ export default function EditProfileScreen() {
               style={[
                 styles.genderOption,
                 gender === "MALE" && styles.genderOptionActive,
+                validationErrors.gender && styles.genderOptionError,
               ]}
-              onPress={() => setGender("MALE")}
+              onPress={() => {
+                setGender("MALE");
+                if (validationErrors.gender) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    gender: undefined,
+                  });
+                }
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.radioButton}>
@@ -277,8 +576,17 @@ export default function EditProfileScreen() {
               style={[
                 styles.genderOption,
                 gender === "FEMALE" && styles.genderOptionActive,
+                validationErrors.gender && styles.genderOptionError,
               ]}
-              onPress={() => setGender("FEMALE")}
+              onPress={() => {
+                setGender("FEMALE");
+                if (validationErrors.gender) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    gender: undefined,
+                  });
+                }
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.radioButton}>
@@ -300,14 +608,21 @@ export default function EditProfileScreen() {
               style={[
                 styles.genderOption,
                 gender === "OTHER" && styles.genderOptionActive,
+                validationErrors.gender && styles.genderOptionError,
               ]}
-              onPress={() => setGender("OTHER")}
+              onPress={() => {
+                setGender("OTHER");
+                if (validationErrors.gender) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    gender: undefined,
+                  });
+                }
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.radioButton}>
-                {gender === "OTHER" && (
-                  <View style={styles.radioButtonInner} />
-                )}
+                {gender === "OTHER" && <View style={styles.radioButtonInner} />}
               </View>
               <Text
                 style={[
@@ -319,6 +634,9 @@ export default function EditProfileScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+          {validationErrors.gender && (
+            <Text style={styles.errorText}>{validationErrors.gender}</Text>
+          )}
         </View>
       </ScrollView>
 
@@ -337,6 +655,26 @@ export default function EditProfileScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <SuccessNotification
+          message={successMessage}
+          onClose={() => setShowSuccessNotification(false)}
+          autoHide={true}
+          duration={2000}
+        />
+      )}
+
+      {/* Error Notification */}
+      {showErrorNotification && (
+        <ErrorNotification
+          message={errorMessage}
+          onClose={() => setShowErrorNotification(false)}
+          autoHide={true}
+          duration={4000}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -386,6 +724,17 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "#E5E7EB",
   },
+  uploadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 60,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   cameraButton: {
     position: "absolute",
     bottom: 0,
@@ -398,6 +747,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 3,
     borderColor: "#FFFFFF",
+  },
+  cameraButtonDisabled: {
+    opacity: 0.5,
   },
   inputSection: {
     marginBottom: 24,
@@ -417,6 +769,19 @@ const styles = StyleSheet.create({
     color: "#111827",
     backgroundColor: "#F9FAFB",
   },
+  inputError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
+  },
+  errorText: {
+    fontSize: 12,
+    color: "#DC2626",
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  placeholderText: {
+    color: "#9CA3AF",
+  },
   dateInput: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
@@ -430,6 +795,22 @@ const styles = StyleSheet.create({
   dateInputText: {
     fontSize: 16,
     color: "#111827",
+  },
+  datePickerButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 8,
+  },
+  datePickerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#4F46E5",
+    borderRadius: 8,
+  },
+  datePickerButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   genderContainer: {
     flexDirection: "row",
@@ -449,6 +830,9 @@ const styles = StyleSheet.create({
   genderOptionActive: {
     borderColor: "#4F46E5",
     backgroundColor: "#EEF2FF",
+  },
+  genderOptionError: {
+    borderColor: "#DC2626",
   },
   radioButton: {
     width: 20,

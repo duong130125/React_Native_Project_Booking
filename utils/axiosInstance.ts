@@ -18,7 +18,7 @@ const getBaseURL = () => {
     // Nếu có biến môi trường hoặc đang dev, có thể là thiết bị thật
     // Bạn có thể thay đổi IP này theo IP máy tính của bạn
     // IP WiFi hiện tại: 192.168.1.225 (kiểm tra bằng ipconfig)
-    const devURL = "http://10.210.32.134:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
+    const devURL = "http://10.210.32.40:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
     const emulatorURL = "http://10.0.2.2:8080/api/v1/"; // Emulator
 
     const selectedURL = __DEV__ ? devURL : emulatorURL;
@@ -50,10 +50,7 @@ console.log(
 
 const axiosInstance = axios.create({
   baseURL: baseURL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-  timeout: 10000, // 10 seconds timeout
+  timeout: 30000, // 30 seconds timeout for file uploads
 });
 
 // Đảm bảo không có Authorization trong default headers
@@ -64,6 +61,52 @@ if (axiosInstance.defaults.headers.common) {
 // Gửi các request kèm theo lên API (thông qua interceptor)
 axiosInstance.interceptors.request.use(
   async (config) => {
+    // Check if this is a FormData request
+    // In React Native, FormData might not pass instanceof check
+    const isFormData =
+      config.data instanceof FormData ||
+      (config.data &&
+        config.data.constructor &&
+        config.data.constructor.name === "FormData") ||
+      (config.data && typeof config.data.append === "function");
+
+    // Log for debugging
+    if (isFormData) {
+      console.log("📤 FormData detected, removing Content-Type header", {
+        dataType: typeof config.data,
+        constructor: config.data?.constructor?.name,
+        hasAppend: typeof config.data?.append === "function",
+        url: config.url,
+      });
+    }
+
+    // For FormData, remove Content-Type completely FIRST
+    // so axios can set it automatically with boundary
+    if (isFormData) {
+      if (config.headers) {
+        delete config.headers["Content-Type"];
+        delete config.headers["content-type"];
+      }
+      // Also remove from common headers
+      if (config.headers?.common) {
+        delete config.headers.common["Content-Type"];
+        delete config.headers.common["content-type"];
+      }
+      // Remove from post headers too
+      if (config.headers?.post) {
+        delete config.headers.post["Content-Type"];
+        delete config.headers.post["content-type"];
+      }
+    } else {
+      // Set default Content-Type for non-FormData requests
+      if (!config.headers) {
+        config.headers = {} as any;
+      }
+      if (!config.headers["Content-Type"]) {
+        config.headers["Content-Type"] = "application/json";
+      }
+    }
+
     try {
       const url = config.url || "";
 

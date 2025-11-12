@@ -142,7 +142,9 @@ export default function HomepageScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Best Hotels</Text>
-                <TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push("/(hotel)/all-hotels")}
+                >
                   <Text style={styles.seeAllText}>See All</Text>
                 </TouchableOpacity>
               </View>
@@ -172,7 +174,9 @@ export default function HomepageScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Nearby your location</Text>
-                <TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push("/(hotel)/all-hotels")}
+                >
                   <Text style={styles.seeAllText}>See All</Text>
                 </TouchableOpacity>
               </View>

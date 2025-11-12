@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,8 +13,13 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { changePassword } from "../../apis/auth";
+import ErrorNotification from "../../components/ErrorNotification";
+import SuccessNotification from "../../components/SuccessNotification";
+import {
+  hasValidationErrors,
+  validateChangePassword,
+} from "../../utils/validation";
 
 export default function ChangePasswordScreen() {
   const router = useRouter();
@@ -25,20 +30,29 @@ export default function ChangePasswordScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<{
+    oldPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showErrorNotification, setShowErrorNotification] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleChangePassword = async () => {
-    if (!oldPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
-      Alert.alert("Lỗi", "Vui lòng điền đầy đủ thông tin");
-      return;
-    }
+    // Validate all fields
+    const errors = validateChangePassword(
+      oldPassword,
+      newPassword,
+      confirmPassword
+    );
+    setValidationErrors(errors);
 
-    if (newPassword.length < 6) {
-      Alert.alert("Lỗi", "Mật khẩu mới phải có ít nhất 6 ký tự");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      Alert.alert("Lỗi", "Mật khẩu xác nhận không khớp");
+    // If there are validation errors, don't proceed
+    if (hasValidationErrors(errors)) {
+      setErrorMessage("Vui lòng kiểm tra lại thông tin đã nhập");
+      setShowErrorNotification(true);
       return;
     }
 
@@ -46,24 +60,46 @@ export default function ChangePasswordScreen() {
       setSaving(true);
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) {
-        Alert.alert("Lỗi", "Không tìm thấy thông tin người dùng");
+        setErrorMessage("Không tìm thấy thông tin người dùng");
+        setShowErrorNotification(true);
         return;
       }
 
-      await changePassword(Number(userId), {
+      const result = await changePassword(Number(userId), {
         oldPassword,
         newPassword,
       });
 
-      Alert.alert("Thành công", "Đổi mật khẩu thành công", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
+      setSuccessMessage("Đổi mật khẩu thành công!");
+      setShowSuccessNotification(true);
+
+      // Clear form
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setValidationErrors({});
+
+      // Navigate back after 1.5 seconds
+      setTimeout(() => {
+        router.back();
+      }, 1500);
     } catch (error: any) {
       console.error("Error changing password:", error);
-      Alert.alert("Lỗi", error.message || "Không thể đổi mật khẩu");
+
+      // Handle specific error messages
+      let errorMsg = "Không thể đổi mật khẩu";
+      if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "Thông tin không hợp lệ";
+      } else if (error.response?.status === 401) {
+        errorMsg = "Mật khẩu cũ không đúng";
+      } else if (error.response?.status === 404) {
+        errorMsg = "Không tìm thấy người dùng";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
     } finally {
       setSaving(false);
     }
@@ -93,11 +129,24 @@ export default function ChangePasswordScreen() {
         {/* Old Password Field */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Mật khẩu hiện tại</Text>
-          <View style={styles.passwordContainer}>
+          <View
+            style={[
+              styles.passwordContainer,
+              validationErrors.oldPassword && styles.passwordContainerError,
+            ]}
+          >
             <TextInput
               style={styles.passwordInput}
               value={oldPassword}
-              onChangeText={setOldPassword}
+              onChangeText={(text) => {
+                setOldPassword(text);
+                if (validationErrors.oldPassword) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    oldPassword: undefined,
+                  });
+                }
+              }}
               placeholder="Nhập mật khẩu hiện tại"
               placeholderTextColor="#9CA3AF"
               secureTextEntry={!showOldPassword}
@@ -114,16 +163,42 @@ export default function ChangePasswordScreen() {
               />
             </TouchableOpacity>
           </View>
+          {validationErrors.oldPassword && (
+            <Text style={styles.errorText}>{validationErrors.oldPassword}</Text>
+          )}
         </View>
 
         {/* New Password Field */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Mật khẩu mới</Text>
-          <View style={styles.passwordContainer}>
+          <View
+            style={[
+              styles.passwordContainer,
+              validationErrors.newPassword && styles.passwordContainerError,
+            ]}
+          >
             <TextInput
               style={styles.passwordInput}
               value={newPassword}
-              onChangeText={setNewPassword}
+              onChangeText={(text) => {
+                setNewPassword(text);
+                if (validationErrors.newPassword) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    newPassword: undefined,
+                  });
+                }
+                // Clear confirm password error if passwords match
+                if (
+                  validationErrors.confirmPassword &&
+                  text === confirmPassword
+                ) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    confirmPassword: undefined,
+                  });
+                }
+              }}
               placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)"
               placeholderTextColor="#9CA3AF"
               secureTextEntry={!showNewPassword}
@@ -140,16 +215,32 @@ export default function ChangePasswordScreen() {
               />
             </TouchableOpacity>
           </View>
+          {validationErrors.newPassword && (
+            <Text style={styles.errorText}>{validationErrors.newPassword}</Text>
+          )}
         </View>
 
         {/* Confirm Password Field */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Xác nhận mật khẩu mới</Text>
-          <View style={styles.passwordContainer}>
+          <View
+            style={[
+              styles.passwordContainer,
+              validationErrors.confirmPassword && styles.passwordContainerError,
+            ]}
+          >
             <TextInput
               style={styles.passwordInput}
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                if (validationErrors.confirmPassword) {
+                  setValidationErrors({
+                    ...validationErrors,
+                    confirmPassword: undefined,
+                  });
+                }
+              }}
               placeholder="Nhập lại mật khẩu mới"
               placeholderTextColor="#9CA3AF"
               secureTextEntry={!showConfirmPassword}
@@ -166,6 +257,11 @@ export default function ChangePasswordScreen() {
               />
             </TouchableOpacity>
           </View>
+          {validationErrors.confirmPassword && (
+            <Text style={styles.errorText}>
+              {validationErrors.confirmPassword}
+            </Text>
+          )}
         </View>
       </ScrollView>
 
@@ -184,6 +280,26 @@ export default function ChangePasswordScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <SuccessNotification
+          message={successMessage}
+          onClose={() => setShowSuccessNotification(false)}
+          autoHide={true}
+          duration={2000}
+        />
+      )}
+
+      {/* Error Notification */}
+      {showErrorNotification && (
+        <ErrorNotification
+          message={errorMessage}
+          onClose={() => setShowErrorNotification(false)}
+          autoHide={true}
+          duration={4000}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -239,6 +355,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#F9FAFB",
   },
+  passwordContainerError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
+  },
+  errorText: {
+    fontSize: 12,
+    color: "#DC2626",
+    marginTop: 4,
+    marginLeft: 4,
+  },
   passwordInput: {
     flex: 1,
     padding: 16,
@@ -280,4 +406,3 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
-

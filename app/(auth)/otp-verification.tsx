@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -14,6 +16,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView as RNSafeAreaView } from "react-native-safe-area-context";
+import { forgotPassword, verifyOtp } from "../../apis/auth";
+import ErrorNotification from "../../components/ErrorNotification";
+import SuccessNotification from "../../components/SuccessNotification";
+import { VerifyOtpRequest } from "../../types/auth";
 
 export default function OTPVerificationScreen() {
   const params = useLocalSearchParams();
@@ -21,7 +27,42 @@ export default function OTPVerificationScreen() {
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [timer, setTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [contact, setContact] = useState<string>("");
+  const [method, setMethod] = useState<"email" | "sms" | null>(null);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [showErrorNotification, setShowErrorNotification] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const inputRefs = useRef<(TextInput | null)[]>([]);
+
+  // Load contact info from params or AsyncStorage
+  useEffect(() => {
+    const loadContactInfo = async () => {
+      const contactParam = params.contact as string;
+      const methodParam = params.method as "email" | "sms";
+
+      if (contactParam && methodParam) {
+        setContact(contactParam);
+        setMethod(methodParam);
+        await AsyncStorage.setItem("forgotPasswordContact", contactParam);
+        await AsyncStorage.setItem("forgotPasswordMethod", methodParam);
+      } else {
+        // Load from AsyncStorage if not in params
+        const savedContact = await AsyncStorage.getItem("forgotPasswordContact");
+        const savedMethod = await AsyncStorage.getItem("forgotPasswordMethod");
+        if (savedContact && savedMethod) {
+          setContact(savedContact);
+          setMethod(savedMethod as "email" | "sms");
+        } else {
+          // No contact info, go back
+          router.back();
+        }
+      }
+    };
+
+    loadContactInfo();
+  }, [params]);
 
   useEffect(() => {
     if (timer > 0) {
@@ -70,18 +111,110 @@ export default function OTPVerificationScreen() {
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const otpCode = otp.join("");
-    if (otpCode.length === 4) {
-      router.push("/new-password" as any);
+    if (otpCode.length !== 4) {
+      setErrorMessage("Vui lòng nhập đầy đủ 4 chữ số OTP");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    if (!contact) {
+      setErrorMessage("Không tìm thấy thông tin liên hệ");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    try {
+      setVerifying(true);
+      setErrorMessage("");
+
+      const verifyOtpRequest: VerifyOtpRequest = {
+        contact: contact,
+        otp: otpCode,
+      };
+
+      const response = await verifyOtp(verifyOtpRequest);
+
+      if (response.success) {
+        // Lưu OTP đã verify vào AsyncStorage
+        await AsyncStorage.setItem("verifiedOtp", otpCode);
+        
+        // Navigate to new password screen
+        router.push({
+          pathname: "/new-password",
+          params: {
+            contact: contact,
+            otp: otpCode,
+          },
+        } as any);
+      } else {
+        setErrorMessage(response.message || "OTP không đúng. Vui lòng thử lại.");
+        setShowErrorNotification(true);
+        // Clear OTP on error
+        setOtp(["", "", "", ""]);
+        inputRefs.current[0]?.focus();
+      }
+    } catch (error: any) {
+      console.error("Error verifying OTP:", error);
+      let errorMsg = "OTP không đúng. Vui lòng thử lại.";
+      if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "OTP không đúng hoặc đã hết hạn";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
+      // Clear OTP on error
+      setOtp(["", "", "", ""]);
+      inputRefs.current[0]?.focus();
+    } finally {
+      setVerifying(false);
     }
   };
 
-  const handleResend = () => {
-    setTimer(60);
-    setCanResend(false);
-    setOtp(["", "", "", ""]);
-    inputRefs.current[0]?.focus();
+  const handleResend = async () => {
+    if (!contact) {
+      setErrorMessage("Không tìm thấy thông tin liên hệ");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErrorMessage("");
+
+      const forgotPasswordRequest = {
+        contact: contact,
+      };
+
+      const response = await forgotPassword(forgotPasswordRequest);
+
+      if (response.success) {
+        setTimer(60);
+        setCanResend(false);
+        setOtp(["", "", "", ""]);
+        inputRefs.current[0]?.focus();
+        setShowSuccessNotification(true);
+      } else {
+        setErrorMessage(response.message || "Không thể gửi lại OTP. Vui lòng thử lại.");
+        setShowErrorNotification(true);
+      }
+    } catch (error: any) {
+      console.error("Error resending OTP:", error);
+      let errorMsg = "Không thể gửi lại OTP. Vui lòng thử lại.";
+      if (error.response?.status === 404) {
+        errorMsg = "Email hoặc số điện thoại không tồn tại trong hệ thống";
+      } else if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "Thông tin không hợp lệ";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      setErrorMessage(errorMsg);
+      setShowErrorNotification(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -89,11 +222,26 @@ export default function OTPVerificationScreen() {
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs
       .toString()
-      .padStart(2, "0")}s`;
+      .padStart(2, "0")}`;
   };
 
-  const contactInfo =
-    params.method === "sms" ? "(406) 555-0120" : "curtis.weaver@example.com";
+  // Format contact info for display
+  const formatContactInfo = (contact: string, method: "email" | "sms" | null): string => {
+    if (!contact) return "";
+    if (method === "email") {
+      return contact;
+    } else if (method === "sms") {
+      // Format phone number: (XXX) XXX-XXXX
+      const cleaned = contact.replace(/\D/g, "");
+      if (cleaned.length === 10) {
+        return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+      }
+      return contact;
+    }
+    return contact;
+  };
+
+  const contactInfo = formatContactInfo(contact, method);
 
   return (
     <RNSafeAreaView style={styles.container}>
@@ -116,9 +264,9 @@ export default function OTPVerificationScreen() {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Enter OTP Code</Text>
+            <Text style={styles.title}>Nhập mã OTP</Text>
             <Text style={styles.subtitle}>
-              OTP code has been sent to {contactInfo}
+              Mã OTP đã được gửi đến {contactInfo || "..."}
             </Text>
           </View>
 
@@ -157,12 +305,20 @@ export default function OTPVerificationScreen() {
 
           {/* Resend Code */}
           <View style={styles.resendContainer}>
-            <Text style={styles.resendText}>Resend code</Text>
+            <Text style={styles.resendText}>Gửi lại mã</Text>
             {!canResend ? (
               <Text style={styles.timerText}>{formatTime(timer)}</Text>
             ) : (
-              <TouchableOpacity onPress={handleResend}>
-                <Text style={styles.resendLink}>Resend</Text>
+              <TouchableOpacity
+                onPress={handleResend}
+                disabled={loading}
+                activeOpacity={0.7}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#4F46E5" />
+                ) : (
+                  <Text style={styles.resendLink}>Gửi lại</Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -171,16 +327,40 @@ export default function OTPVerificationScreen() {
           <TouchableOpacity
             style={[
               styles.verifyButton,
-              otp.join("").length !== 4 && styles.verifyButtonDisabled,
+              (otp.join("").length !== 4 || verifying) && styles.verifyButtonDisabled,
             ]}
             onPress={handleVerify}
-            disabled={otp.join("").length !== 4}
+            disabled={otp.join("").length !== 4 || verifying}
             activeOpacity={0.8}
           >
-            <Text style={styles.verifyButtonText}>Verify</Text>
+            {verifying ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.verifyButtonText}>Xác thực</Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <SuccessNotification
+          message="OTP đã được gửi lại thành công!"
+          onClose={() => setShowSuccessNotification(false)}
+          autoHide={true}
+          duration={2000}
+        />
+      )}
+
+      {/* Error Notification */}
+      {showErrorNotification && (
+        <ErrorNotification
+          message={errorMessage}
+          onClose={() => setShowErrorNotification(false)}
+          autoHide={true}
+          duration={4000}
+        />
+      )}
     </RNSafeAreaView>
   );
 }

@@ -138,6 +138,111 @@ export default function RoomDetailScreen() {
     ];
   }, [room?.images, hotel?.imageUrl, room?.hotel?.imageUrl]);
 
+  // Mapping từ tên icon trong database sang tên icon hợp lệ của Ionicons
+  const getValidIconName = (iconName: string | undefined | null): string => {
+    if (!iconName || iconName.trim() === "") {
+      return "checkmark-circle";
+    }
+
+    // Mapping các tên icon phổ biến
+    const iconMapping: Record<string, string> = {
+      // Air conditioning
+      ac: "snow-outline",
+      "air-conditioning": "snow-outline",
+      "air conditioning": "snow-outline",
+      // Pool
+      pool: "water-outline",
+      swimming: "water-outline",
+      "swimming-pool": "water-outline",
+      // Breakfast
+      breakfast: "restaurant",
+      "restaurant-outline": "restaurant",
+      // WiFi
+      wifi: "wifi-outline",
+      "free-wifi": "wifi-outline",
+      // TV
+      tv: "tv-outline",
+      television: "tv-outline",
+      // Parking
+      parking: "car-outline",
+      "free-parking": "car-outline",
+      // Gym
+      gym: "fitness-outline",
+      fitness: "fitness-outline",
+      // Spa
+      spa: "flower-outline",
+      // Restaurant
+      restaurant: "restaurant-outline",
+      // Bar
+      bar: "wine-outline",
+      // Laundry
+      laundry: "shirt-outline",
+      "laundry-service": "shirt-outline",
+      // Room service
+      "room-service": "call-outline",
+      "room service": "call-outline",
+      // Pet friendly
+      "pet-friendly": "paw-outline",
+      "pet friendly": "paw-outline",
+      pets: "paw-outline",
+      // Elevator
+      elevator: "arrow-up-outline",
+      lift: "arrow-up-outline",
+      // Business center
+      "business-center": "briefcase-outline",
+      "business center": "briefcase-outline",
+      // Conference room
+      "conference-room": "people-outline",
+      "conference room": "people-outline",
+      // Airport shuttle
+      "airport-shuttle": "airplane-outline",
+      "airport shuttle": "airplane-outline",
+      // Beach access
+      "beach-access": "beach-outline",
+      "beach access": "beach-outline",
+      // Hot tub
+      "hot-tub": "water-outline",
+      "hot tub": "water-outline",
+      jacuzzi: "water-outline",
+      // Balcony
+      balcony: "home-outline",
+      // Kitchen
+      kitchen: "restaurant-outline",
+      "full-kitchen": "restaurant-outline",
+      // Safe
+      safe: "lock-closed-outline",
+      "in-room-safe": "lock-closed-outline",
+      // Minibar
+      minibar: "wine-outline",
+      "mini-bar": "wine-outline",
+      // Smoking
+      smoking: "flame-outline",
+      "non-smoking": "ban-outline",
+      "non smoking": "ban-outline",
+    };
+
+    // Chuyển về lowercase và trim để so sánh
+    const normalizedIcon = iconName.toLowerCase().trim();
+
+    // Kiểm tra trong mapping trước
+    if (iconMapping[normalizedIcon]) {
+      return iconMapping[normalizedIcon];
+    }
+
+    // Nếu icon name đã có suffix "-outline", "-sharp", hoặc "-filled",
+    // giả định là tên icon hợp lệ và dùng trực tiếp
+    if (
+      normalizedIcon.endsWith("-outline") ||
+      normalizedIcon.endsWith("-sharp") ||
+      normalizedIcon.endsWith("-filled")
+    ) {
+      return normalizedIcon;
+    }
+
+    // Nếu không có trong mapping và không có suffix hợp lệ, fallback về checkmark-circle
+    return "checkmark-circle";
+  };
+
   const renderStars = (rating: number) => {
     const stars = [];
     const fullStars = Math.floor(rating);
@@ -428,21 +533,25 @@ export default function RoomDetailScreen() {
             <View style={styles.amenitiesSection}>
               <Text style={styles.sectionTitle}>Tiện ích</Text>
               <View style={styles.amenitiesGrid}>
-                {room.amenities.map((amenity, index) => (
-                  <View
-                    key={amenity?.id || `amenity-${index}`}
-                    style={styles.amenityItem}
-                  >
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color="#10B981"
-                    />
-                    <Text style={styles.amenityText}>
-                      {amenity?.name || "Tiện ích"}
-                    </Text>
-                  </View>
-                ))}
+                {room.amenities.map((amenity, index) => {
+                  // Lấy icon từ database và validate, fallback về "checkmark-circle" nếu không hợp lệ
+                  const iconName = getValidIconName(amenity?.icon);
+                  return (
+                    <View
+                      key={amenity?.id || `amenity-${index}`}
+                      style={styles.amenityItem}
+                    >
+                      <Ionicons
+                        name={iconName as any}
+                        size={20}
+                        color="#10B981"
+                      />
+                      <Text style={styles.amenityText}>
+                        {amenity?.name || "Tiện ích"}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
           )}

@@ -28,9 +28,30 @@ export const validatePassword = (
     return "Mật khẩu không được để trống";
   }
 
-  // Only check minimum length for register, not for login
-  if (!isLogin && password.length < 6) {
-    return "Mật khẩu phải có ít nhất 6 ký tự";
+  // For login, only check if not empty
+  if (isLogin) {
+    return null;
+  }
+
+  // Strong password validation for register/reset password
+  if (password.length < 8) {
+    return "Mật khẩu phải có ít nhất 8 ký tự";
+  }
+
+  if (!/[a-z]/.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 chữ cái thường";
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 chữ cái hoa";
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 chữ số";
+  }
+
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 ký tự đặc biệt";
   }
 
   return null;
@@ -190,11 +211,47 @@ export const validateRegister = (
   return errors;
 };
 
+// Change Password validation
+export interface ChangePasswordValidationErrors {
+  oldPassword?: string;
+  newPassword?: string;
+  confirmPassword?: string;
+}
+
+export const validateChangePassword = (
+  oldPassword: string,
+  newPassword: string,
+  confirmPassword: string
+): ChangePasswordValidationErrors => {
+  const errors: ChangePasswordValidationErrors = {};
+
+  // Validate old password
+  if (!oldPassword || oldPassword.trim() === "") {
+    errors.oldPassword = "Mật khẩu cũ không được để trống";
+  }
+
+  // Validate new password
+  const newPasswordError = validatePassword(newPassword, false);
+  if (newPasswordError) {
+    errors.newPassword = newPasswordError;
+  }
+
+  // Validate confirm password
+  if (!confirmPassword || confirmPassword.trim() === "") {
+    errors.confirmPassword = "Xác nhận mật khẩu không được để trống";
+  } else if (newPassword !== confirmPassword) {
+    errors.confirmPassword = "Mật khẩu xác nhận không khớp";
+  }
+
+  return errors;
+};
+
 // Helper to check if validation errors object is empty
 export const hasValidationErrors = (
   errors:
     | LoginValidationErrors
     | RegisterValidationErrors
+    | ChangePasswordValidationErrors
     | Record<string, string | undefined>
 ): boolean => {
   return Object.values(errors).some(
