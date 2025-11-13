@@ -22,6 +22,18 @@ export default function SelectDateScreen() {
   const [selectedStartDate, setSelectedStartDate] = useState<Date | null>(null);
   const [selectedEndDate, setSelectedEndDate] = useState<Date | null>(null);
 
+  // Load dates from params if available
+  React.useEffect(() => {
+    if (params.startDate && params.endDate) {
+      const start = new Date(params.startDate as string);
+      const end = new Date(params.endDate as string);
+      setSelectedStartDate(start);
+      setSelectedEndDate(end);
+      // Set current month to start date
+      setCurrentMonth(new Date(start.getFullYear(), start.getMonth(), 1));
+    }
+  }, [params.startDate, params.endDate]);
+
   const months = [
     "January",
     "February",
@@ -118,14 +130,43 @@ export default function SelectDateScreen() {
       return;
     }
 
-    setShowModal(false);
+    if (!selectedStartDate || !selectedEndDate) {
+      Alert.alert("Lỗi", "Vui lòng chọn đầy đủ ngày check-in và check-out");
+      return;
+    }
+
+    // Validate dates
+    if (selectedEndDate <= selectedStartDate) {
+      Alert.alert("Lỗi", "Ngày check-out phải sau ngày check-in");
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedStartDate < today) {
+      Alert.alert("Lỗi", "Ngày check-in không được là quá khứ");
+      return;
+    }
+
+    // Format date as YYYY-MM-DD without timezone conversion
+    const formatDateForAPI = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    // Navigate back to confirm-pay with updated dates
     router.push({
-      pathname: "/select-guest",
+      pathname: "/confirm-pay",
       params: {
         roomId: params.roomId as string,
         hotelId: params.hotelId as string,
-        startDate: selectedStartDate?.toISOString(),
-        endDate: selectedEndDate?.toISOString(),
+        startDate: formatDateForAPI(selectedStartDate),
+        endDate: formatDateForAPI(selectedEndDate),
+        adults: (params.adults as string) || "2",
+        children: (params.children as string) || "0",
+        infants: (params.infants as string) || "0",
       },
     } as any);
   };
@@ -222,7 +263,7 @@ export default function SelectDateScreen() {
           })}
         </View>
 
-        {/* Select Guest Button */}
+        {/* Confirm Button */}
         <TouchableOpacity
           style={[
             styles.selectGuestButton,
@@ -233,7 +274,7 @@ export default function SelectDateScreen() {
           disabled={!selectedStartDate || !selectedEndDate}
           activeOpacity={0.8}
         >
-          <Text style={styles.selectGuestButtonText}>Select Guest</Text>
+          <Text style={styles.selectGuestButtonText}>Xác nhận</Text>
         </TouchableOpacity>
       </View>
     </View>

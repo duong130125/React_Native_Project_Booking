@@ -115,6 +115,8 @@ export default function AddNewCardScreen() {
           text: "OK",
           onPress: () => {
             setShowModal(false);
+            // If coming from booking flow, go back to confirm-pay
+            // Otherwise, just go back
             router.back();
           },
         },

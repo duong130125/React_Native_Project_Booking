@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
+  Alert,
   Dimensions,
   Image,
   Modal,
@@ -18,20 +19,40 @@ export default function SelectGuestScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [showModal, setShowModal] = useState(true);
-  const [adults, setAdults] = useState(2);
-  const [children, setChildren] = useState(2);
-  const [infants, setInfants] = useState(0);
+  const [adults, setAdults] = useState(
+    params.adults ? parseInt(params.adults as string) : 2
+  );
+  const [children, setChildren] = useState(
+    params.children ? parseInt(params.children as string) : 0
+  );
+  const [infants, setInfants] = useState(
+    params.infants ? parseInt(params.infants as string) : 0
+  );
 
   const handleNext = () => {
+    if (adults === 0) {
+      Alert.alert("Lỗi", "Phải có ít nhất 1 người lớn");
+      return;
+    }
+
+    const totalGuests = adults + children;
+    if (totalGuests === 0) {
+      Alert.alert("Lỗi", "Phải có ít nhất 1 khách");
+      return;
+    }
+
     setShowModal(false);
+    // Navigate back to confirm-pay with updated guests
     router.push({
       pathname: "/confirm-pay",
       params: {
+        roomId: params.roomId as string,
+        hotelId: params.hotelId as string,
         adults: adults.toString(),
         children: children.toString(),
         infants: infants.toString(),
-        startDate: params.startDate,
-        endDate: params.endDate,
+        startDate: params.startDate as string,
+        endDate: params.endDate as string,
       },
     } as any);
   };

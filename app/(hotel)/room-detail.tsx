@@ -289,7 +289,7 @@ export default function RoomDetailScreen() {
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={64} color="#DC2626" />
           <Text style={styles.errorText}>
-            {error || "Không tìm thấy thông tin phòng"}
+            {String(error || "Không tìm thấy thông tin phòng")}
           </Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadRoomData}>
             <Text style={styles.retryButtonText}>Thử lại</Text>
@@ -422,7 +422,7 @@ export default function RoomDetailScreen() {
                   </Text>
                   {room.reviewCount && room.reviewCount > 0 && (
                     <Text style={styles.reviewCountText}>
-                      ({String(room.reviewCount)} đánh giá)
+                      {`(${String(room.reviewCount)} đánh giá)`}
                     </Text>
                   )}
                 </View>
@@ -430,7 +430,7 @@ export default function RoomDetailScreen() {
             </View>
             {room.roomNumber && (
               <Text style={styles.roomNumber}>
-                Phòng số: {String(room.roomNumber)}
+                {`Phòng số: ${String(room.roomNumber)}`}
               </Text>
             )}
           </View>
@@ -469,7 +469,7 @@ export default function RoomDetailScreen() {
               />
               <Text style={styles.detailLabel}>Sức chứa:</Text>
               <Text style={styles.detailValue}>
-                {String(room.capacity || 2)} người
+                {`${String(room.capacity || 2)} người`}
               </Text>
             </View>
             <View style={styles.detailRow}>
@@ -480,7 +480,7 @@ export default function RoomDetailScreen() {
               />
               <Text style={styles.detailLabel}>Diện tích:</Text>
               <Text style={styles.detailValue}>
-                {String(room.roomSize || 25)}m²
+                {`${String(room.roomSize || 25)}m²`}
               </Text>
             </View>
             <View style={styles.detailRow}>
@@ -547,7 +547,7 @@ export default function RoomDetailScreen() {
                         color="#10B981"
                       />
                       <Text style={styles.amenityText}>
-                        {amenity?.name || "Tiện ích"}
+                        {String(amenity?.name || "Tiện ích")}
                       </Text>
                     </View>
                   );

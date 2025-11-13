@@ -18,7 +18,7 @@ const getBaseURL = () => {
     // Nếu có biến môi trường hoặc đang dev, có thể là thiết bị thật
     // Bạn có thể thay đổi IP này theo IP máy tính của bạn
     // IP WiFi hiện tại: 192.168.1.225 (kiểm tra bằng ipconfig)
-    const devURL = "http://10.210.32.40:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
+    const devURL = "http://192.168.1.225:8080/api/v1/"; // Thiết bị thật - thay IP này nếu cần
     const emulatorURL = "http://10.0.2.2:8080/api/v1/"; // Emulator
 
     const selectedURL = __DEV__ ? devURL : emulatorURL;

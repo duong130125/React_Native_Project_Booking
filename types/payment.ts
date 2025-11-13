@@ -26,7 +26,11 @@ export interface PaymentCardResponse {
 // Payment Types
 export interface PaymentRequest {
   bookingId: number;
-  cardId: number;
+  paymentMethod: "CREDIT_CARD" | "DEBIT_CARD" | "BANK_TRANSFER" | "EWALLET";
+  cardNumber: string;
+  cardHolderName: string;
+  expiryDate: string; // Format: "MM/YY" or "MM/YYYY"
+  cvv: string;
 }
 
 export enum PaymentStatus {
@@ -52,4 +56,3 @@ export interface PaymentResponse {
   createdAt?: string;
   updatedAt?: string;
 }
-

@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -13,15 +15,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-interface Review {
-  id: number;
-  userName: string;
-  userAvatar: any;
-  date: string;
-  rating: number;
-  content: string;
-}
+import {
+  addReview,
+  getAverageRatingByHotel,
+  getAverageRatingByRoom,
+  getReviewsByHotel,
+  getReviewsByRoom,
+} from "../../apis/review";
+import ErrorNotification from "../../components/ErrorNotification";
+import SuccessNotification from "../../components/SuccessNotification";
+import { ReviewResponse } from "../../types/hotel";
 
 export default function ReviewsScreen() {
   const router = useRouter();
@@ -29,92 +32,194 @@ export default function ReviewsScreen() {
   const [showWriteReviewModal, setShowWriteReviewModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
+  const [reviews, setReviews] = useState<ReviewResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [averageRating, setAverageRating] = useState(0);
+  const [totalReviews, setTotalReviews] = useState(0);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [showErrorNotification, setShowErrorNotification] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Mock data
-  const averageRating = 5.0;
-  const totalReviews = 120;
-  const reviews: Review[] = [
-    {
-      id: 1,
-      userName: "Savannah Nguyen",
-      userAvatar: require("../../assets/images/anh1.jpg"),
-      date: "05 May, 2023",
-      rating: 5,
-      content:
-        "It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout.",
-    },
-    {
-      id: 2,
-      userName: "Wade Warren",
-      userAvatar: require("../../assets/images/anh4.jpg"),
-      date: "04 May, 2023",
-      rating: 5,
-      content:
-        "It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout.",
-    },
-    {
-      id: 3,
-      userName: "Devon Lane",
-      userAvatar: require("../../assets/images/anh2.jpg"),
-      date: "03 May, 2023",
-      rating: 5,
-      content:
-        "It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout.",
-    },
-    {
-      id: 4,
-      userName: "Kathryn Murphy",
-      userAvatar: require("../../assets/images/anh6.jpg"),
-      date: "02 May, 2023",
-      rating: 5,
-      content:
-        "It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout.",
-    },
-  ];
+  const hotelId = params.hotelId ? parseInt(params.hotelId as string) : null;
+  const roomId = params.roomId ? parseInt(params.roomId as string) : null;
+  const reviewType = hotelId ? "hotel" : "room";
+  const targetId = hotelId || roomId;
 
-  const renderStars = (rating: number) => {
-    const stars = [];
-    for (let i = 0; i < 5; i++) {
-      stars.push(
-        <Ionicons
-          key={i}
-          name={i < rating ? "star" : "star-outline"}
-          size={16}
-          color="#FFB800"
-        />
+  useEffect(() => {
+    loadReviews();
+  }, [hotelId, roomId]);
+
+  const loadReviews = async () => {
+    if (!targetId) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      let reviewsData;
+      let avgRating;
+
+      if (hotelId) {
+        reviewsData = await getReviewsByHotel(hotelId, 0, 100);
+        avgRating = await getAverageRatingByHotel(hotelId);
+      } else if (roomId) {
+        reviewsData = await getReviewsByRoom(roomId, 0, 100);
+        avgRating = await getAverageRatingByRoom(roomId);
+      } else {
+        return;
+      }
+
+      setReviews(reviewsData.content);
+      setTotalReviews(reviewsData.totalElements);
+      setAverageRating(avgRating || 0);
+    } catch (error: any) {
+      console.error("Error loading reviews:", error);
+      setErrorMessage(
+        error.response?.data?.message ||
+          error.message ||
+          "Không thể tải đánh giá"
       );
+      setShowErrorNotification(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderStars = (rating: number, size: number = 16) => {
+    const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+
+    for (let i = 0; i < 5; i++) {
+      if (i < fullStars) {
+        stars.push(
+          <Ionicons key={i} name="star" size={size} color="#FFB800" />
+        );
+      } else if (i === fullStars && hasHalfStar) {
+        stars.push(
+          <Ionicons key={i} name="star-half" size={size} color="#FFB800" />
+        );
+      } else {
+        stars.push(
+          <Ionicons key={i} name="star-outline" size={size} color="#FFB800" />
+        );
+      }
     }
     return stars;
   };
 
-  const handleSubmitReview = () => {
-    // Handle submit review logic here
-    console.log("Rating:", selectedRating);
-    console.log("Review:", reviewText);
-    setShowWriteReviewModal(false);
-    setSelectedRating(0);
-    setReviewText("");
+  const handleSubmitReview = async () => {
+    if (!targetId) {
+      setErrorMessage("Thiếu thông tin khách sạn/phòng");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    if (selectedRating === 0) {
+      setErrorMessage("Vui lòng chọn đánh giá");
+      setShowErrorNotification(true);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setErrorMessage("");
+
+      const reviewRequest: {
+        hotelId?: number;
+        roomId?: number;
+        rating: number;
+        comment?: string;
+      } = {
+        rating: selectedRating,
+        comment: reviewText.trim() || undefined,
+      };
+
+      if (hotelId) {
+        reviewRequest.hotelId = hotelId;
+      } else if (roomId) {
+        reviewRequest.roomId = roomId;
+      }
+
+      await addReview(reviewRequest);
+      setShowSuccessNotification(true);
+      setShowWriteReviewModal(false);
+      setSelectedRating(0);
+      setReviewText("");
+
+      // Reload reviews after submitting
+      setTimeout(() => {
+        loadReviews();
+      }, 1000);
+    } catch (error: any) {
+      console.error("Error submitting review:", error);
+      setErrorMessage(
+        error.response?.data?.message ||
+          error.message ||
+          "Không thể gửi đánh giá. Vui lòng thử lại."
+      );
+      setShowErrorNotification(true);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const renderReviewItem = ({ item }: { item: Review }) => (
-    <View style={styles.reviewItem}>
-      <View style={styles.reviewHeader}>
-        <View style={styles.userInfo}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>
-              {item.userName.charAt(0).toUpperCase()}
-            </Text>
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("vi-VN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  const getInitials = (name: string | undefined) => {
+    if (!name) return "?";
+    const parts = name.trim().split(" ");
+    if (parts.length >= 2) {
+      return (
+        parts[0].charAt(0) + parts[parts.length - 1].charAt(0)
+      ).toUpperCase();
+    }
+    return name.charAt(0).toUpperCase();
+  };
+
+  const renderReviewItem = ({ item }: { item: ReviewResponse }) => {
+    const userName = item.user?.fullName || "Anonymous";
+    const userAvatar = item.user?.avatarUrl;
+    const rating = item.rating || 0;
+    const comment = item.comment || "";
+    const date = formatDate(item.createdAt);
+
+    return (
+      <View style={styles.reviewItem}>
+        <View style={styles.reviewHeader}>
+          <View style={styles.userInfo}>
+            {userAvatar ? (
+              <Image
+                source={{ uri: userAvatar }}
+                style={styles.avatarImage}
+                defaultSource={require("../../assets/images/anh1.jpg")}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>{getInitials(userName)}</Text>
+              </View>
+            )}
+            <View style={styles.userDetails}>
+              <Text style={styles.userName}>{userName}</Text>
+              <Text style={styles.reviewDate}>{date}</Text>
+            </View>
           </View>
-          <View style={styles.userDetails}>
-            <Text style={styles.userName}>{item.userName}</Text>
-            <Text style={styles.reviewDate}>{item.date}</Text>
-          </View>
+          <View style={styles.starsContainer}>{renderStars(rating)}</View>
         </View>
-        <View style={styles.starsContainer}>{renderStars(item.rating)}</View>
+        {comment && <Text style={styles.reviewContent}>{comment}</Text>}
       </View>
-      <Text style={styles.reviewContent}>{item.content}</Text>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -137,21 +242,51 @@ export default function ReviewsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Rating Summary */}
-        <View style={styles.ratingSummary}>
-          <Text style={styles.averageRating}>{averageRating}</Text>
-          <Text style={styles.totalReviews}>{totalReviews} Reviews</Text>
-          <View style={styles.summaryStarsContainer}>{renderStars(5)}</View>
-        </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4F46E5" />
+            <Text style={styles.loadingText}>Đang tải đánh giá...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Rating Summary */}
+            <View style={styles.ratingSummary}>
+              <Text style={styles.averageRating}>
+                {averageRating > 0 ? averageRating.toFixed(1) : "0.0"}
+              </Text>
+              <Text style={styles.totalReviews}>
+                {totalReviews} {totalReviews === 1 ? "Đánh giá" : "Đánh giá"}
+              </Text>
+              <View style={styles.summaryStarsContainer}>
+                {renderStars(averageRating, 20)}
+              </View>
+            </View>
 
-        {/* Reviews List */}
-        <FlatList
-          data={reviews}
-          renderItem={renderReviewItem}
-          keyExtractor={(item) => item.id.toString()}
-          scrollEnabled={false}
-          contentContainerStyle={styles.reviewsList}
-        />
+            {/* Reviews List */}
+            {reviews.length > 0 ? (
+              <FlatList
+                data={reviews}
+                renderItem={renderReviewItem}
+                keyExtractor={(item) =>
+                  item.id?.toString() || Math.random().toString()
+                }
+                scrollEnabled={false}
+                contentContainerStyle={styles.reviewsList}
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name="chatbubbles-outline"
+                  size={64}
+                  color="#D1D5DB"
+                />
+                <Text style={styles.emptyStateText}>
+                  Chưa có đánh giá nào. Hãy là người đầu tiên đánh giá!
+                </Text>
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
 
       {/* Write Review Button */}
@@ -223,18 +358,42 @@ export default function ReviewsScreen() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                (selectedRating === 0 || reviewText.trim() === "") &&
+                (selectedRating === 0 || submitting) &&
                   styles.submitButtonDisabled,
               ]}
               onPress={handleSubmitReview}
-              disabled={selectedRating === 0 || reviewText.trim() === ""}
+              disabled={selectedRating === 0 || submitting}
               activeOpacity={0.8}
             >
-              <Text style={styles.submitButtonText}>Submit Review</Text>
+              {submitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitButtonText}>Gửi đánh giá</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <SuccessNotification
+          message="Đánh giá đã được gửi thành công!"
+          onClose={() => setShowSuccessNotification(false)}
+          autoHide={true}
+          duration={2000}
+        />
+      )}
+
+      {/* Error Notification */}
+      {showErrorNotification && (
+        <ErrorNotification
+          message={errorMessage}
+          onClose={() => setShowErrorNotification(false)}
+          autoHide={true}
+          duration={4000}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -443,5 +602,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: "#6B7280",
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: "#6B7280",
+    marginTop: 16,
+    textAlign: "center",
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
   },
 });
