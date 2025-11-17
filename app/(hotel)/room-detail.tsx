@@ -581,6 +581,8 @@ export default function RoomDetailScreen() {
                   <Text style={styles.hotelCity}>
                     {typeof hotel.city === "string"
                       ? hotel.city
+                      : typeof hotel.city === "object" && hotel.city !== null
+                      ? JSON.stringify(hotel.city)
                       : String(hotel.city || "")}
                   </Text>
                 )}

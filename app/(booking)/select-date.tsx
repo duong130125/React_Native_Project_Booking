@@ -158,7 +158,7 @@ export default function SelectDateScreen() {
 
     // Navigate back to confirm-pay with updated dates
     router.push({
-      pathname: "/confirm-pay",
+      pathname: "/select-guest",
       params: {
         roomId: params.roomId as string,
         hotelId: params.hotelId as string,

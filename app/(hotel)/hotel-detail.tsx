@@ -492,7 +492,7 @@ export default function HotelDetailScreen() {
                           color="#6B7280"
                         />
                         <Text style={styles.roomDetailText}>
-                          {room.capacity || 2} người
+                          {String(room.capacity || 2)} người
                         </Text>
                         <Ionicons
                           name="square-outline"
@@ -501,7 +501,7 @@ export default function HotelDetailScreen() {
                           style={styles.roomDetailIcon}
                         />
                         <Text style={styles.roomDetailText}>
-                          {room.roomSize || 25}m²
+                          {String(room.roomSize || 25)}m²
                         </Text>
                       </View>
                       <Text style={styles.roomPrice}>

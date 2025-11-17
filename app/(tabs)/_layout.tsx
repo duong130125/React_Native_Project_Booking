@@ -50,7 +50,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="bookmarks"
+        name="notifications"
         options={{
           title: "Notifications",
           tabBarIcon: ({ color, focused }) => (

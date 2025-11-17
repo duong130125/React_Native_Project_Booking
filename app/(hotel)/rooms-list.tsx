@@ -224,20 +224,20 @@ export default function RoomsListScreen() {
                   <View style={styles.roomDetailItem}>
                     <Ionicons name="people-outline" size={16} color="#6B7280" />
                     <Text style={styles.roomDetailText}>
-                      {room.capacity || 2} người
+                      {String(room.capacity || 2)} người
                     </Text>
                   </View>
                   <View style={styles.roomDetailItem}>
                     <Ionicons name="square-outline" size={16} color="#6B7280" />
                     <Text style={styles.roomDetailText}>
-                      {room.roomSize || 25}m²
+                      {String(room.roomSize || 25)}m²
                     </Text>
                   </View>
                   {room.amenities?.length ? (
                     <View style={styles.roomDetailItem}>
                       <Ionicons name="star-outline" size={16} color="#6B7280" />
                       <Text style={styles.roomDetailText}>
-                        {room.amenities.length || 0} tiện ích
+                        {String(room.amenities.length || 0)} tiện ích
                       </Text>
                     </View>
                   ) : null}
